@@ -4,6 +4,7 @@ import (
 	"context"
 
 	einomodel "github.com/cloudwego/eino/components/model"
+	einoretriever "github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/schema"
 
 	"eino_ctf_agent/internal/config"
@@ -11,20 +12,19 @@ import (
 	"eino_ctf_agent/internal/prompt"
 	"eino_ctf_agent/internal/retriever"
 	"eino_ctf_agent/internal/skill"
-	"eino_ctf_agent/internal/vectorstore"
 )
 
 type RAGService struct {
 	cfg         *config.Config
 	chatModel   einomodel.BaseChatModel
-	retriever   *retriever.KnowledgeRetriever
+	retriever   einoretriever.Retriever
 	skillRouter *skill.Router
 }
 
 func NewRAGService(
 	cfg *config.Config,
 	chatModel einomodel.BaseChatModel,
-	retriever *retriever.KnowledgeRetriever,
+	retriever einoretriever.Retriever,
 	skillRouter *skill.Router,
 ) *RAGService {
 	return &RAGService{
@@ -65,10 +65,12 @@ func (s *RAGService) Stream(ctx context.Context, req *appmodel.ChatRequest) (*Ch
 
 func (s *RAGService) buildMessages(ctx context.Context, req *appmodel.ChatRequest) ([]*schema.Message, []appmodel.Citation, []appmodel.SkillRef, error) {
 	query := lastUserMessage(req.Messages)
-	results, err := s.retriever.Retrieve(ctx, query, vectorstore.SearchOptions{
-		TopK:           s.cfg.RAG.TopK,
-		ScoreThreshold: s.cfg.RAG.ScoreThreshold,
-	})
+	results, err := s.retriever.Retrieve(
+		ctx,
+		query,
+		einoretriever.WithTopK(s.cfg.RAG.TopK),
+		einoretriever.WithScoreThreshold(s.cfg.RAG.ScoreThreshold),
+	)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -77,13 +79,13 @@ func (s *RAGService) buildMessages(ctx context.Context, req *appmodel.ChatReques
 	activeSkills := toSkillRefs(matchedSkills)
 
 	citations := make([]appmodel.Citation, 0, len(results))
-	for _, result := range results {
+	for _, doc := range results {
 		citations = append(citations, appmodel.Citation{
-			DocumentID: result.Record.DocumentID,
-			Filename:   result.Record.Filename,
-			ChunkIndex: result.Record.ChunkIndex,
-			Score:      result.Score,
-			PageNumber: result.Record.PageNumber,
+			DocumentID: metadataString(doc, retriever.MetaDocumentID),
+			Filename:   metadataString(doc, retriever.MetaFilename),
+			ChunkIndex: metadataInt(doc, retriever.MetaChunkIndex),
+			Score:      doc.Score(),
+			PageNumber: metadataInt(doc, retriever.MetaPageNumber),
 		})
 	}
 
@@ -96,6 +98,36 @@ func (s *RAGService) buildMessages(ctx context.Context, req *appmodel.ChatReques
 		})
 	}
 	return messages, citations, activeSkills, nil
+}
+
+func metadataString(doc *schema.Document, key string) string {
+	if doc == nil || doc.MetaData == nil {
+		return ""
+	}
+	value, ok := doc.MetaData[key]
+	if !ok {
+		return ""
+	}
+	if s, ok := value.(string); ok {
+		return s
+	}
+	return ""
+}
+
+func metadataInt(doc *schema.Document, key string) int {
+	if doc == nil || doc.MetaData == nil {
+		return 0
+	}
+	switch value := doc.MetaData[key].(type) {
+	case int:
+		return value
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	default:
+		return 0
+	}
 }
 
 func (s *RAGService) matchSkills(query string) []skill.Skill {

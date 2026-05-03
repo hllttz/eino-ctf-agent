@@ -41,7 +41,7 @@ func main() {
 		log.Fatalf("[FATAL] failed to create chat model: %v", err)
 	}
 
-	embedder, err := embedding.NewEmbedder(cfg)
+	embedder, err := embedding.NewEmbedder(ctx, cfg)
 	if err != nil {
 		log.Fatalf("[FATAL] failed to create embedder: %v", err)
 	}

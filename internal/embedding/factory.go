@@ -1,15 +1,16 @@
 package embedding
 
 import (
+	"context"
 	"fmt"
 
 	"eino_ctf_agent/internal/config"
 )
 
-func NewEmbedder(cfg *config.Config) (Embedder, error) {
+func NewEmbedder(ctx context.Context, cfg *config.Config) (Embedder, error) {
 	switch cfg.Embedding.Provider {
 	case "dashscope", "qwen":
-		return NewQwenEmbedder(cfg)
+		return NewQwenEmbedder(ctx, cfg)
 	default:
 		return nil, fmt.Errorf("unsupported embedding provider: %s", cfg.Embedding.Provider)
 	}

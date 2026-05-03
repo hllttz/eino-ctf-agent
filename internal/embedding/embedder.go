@@ -1,8 +1,5 @@
 package embedding
 
-import "context"
+import einoembedding "github.com/cloudwego/eino/components/embedding"
 
-type Embedder interface {
-	EmbedStrings(ctx context.Context, texts []string) ([][]float64, error)
-	Dimension() int
-}
+type Embedder = einoembedding.Embedder

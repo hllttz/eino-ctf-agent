@@ -2,6 +2,38 @@
 
 本文档记录当前后端 MVP 之后最值得继续补充的能力。优先级按“能否明显提升可用性、是否降低后续开发成本、是否符合 CTF Agent 场景”排序。
 
+## P0：继续收敛到 Eino 原生组件和 Graph
+
+### 目标
+
+凡是 Eino 或 eino-ext 已经提供的组件能力，优先用框架组件表达，而不是在业务层重新定义同类抽象。
+
+### 为什么要做
+
+项目目标是 Eino 驱动的本地知识库 Agent。重复定义 Embedding、Retriever、Indexer、Tool、Graph 等概念，会让后续接入 Eino callback、trace、compose graph、tool node 和 ReAct Agent 变得别扭。
+
+### 当前状态
+
+- LLM 已使用 Eino `model.BaseChatModel`。
+- Embedding 已收敛为 Eino `embedding.Embedder`，DashScope/Qwen 走 eino-ext OpenAI-compatible embedding 组件。
+- KnowledgeRetriever 已实现 Eino `retriever.Retriever`，返回 `schema.Document`。
+- SQLite VectorStore 仍保留为本地 MVP store adapter，因为当前需求是本地 SQLite JSON 向量存储，暂未直接使用 Milvus/Redis/Elasticsearch 等 eino-ext 外部向量库。
+
+### 详细任务
+
+- 将 Markdown 入库链路逐步收敛为 `Parser/Transformer/Indexer` 风格。
+- 为本地 SQLite VectorStore 增加 Eino `indexer.Indexer` 适配器。
+- 将 Simple RAG 从 service 手写编排迁移到 Eino `compose.Graph` 或 `compose.Chain`。
+- Tool-Augmented Agent 阶段使用 Eino `tool.BaseTool` 和 `compose.ToolsNode`。
+- 保持业务 service 只负责应用语义，不直接实现框架已有的抽象。
+
+### 验收标准
+
+- Chat/RAG 主链路可以通过 Eino Graph 编译运行。
+- Retriever、Indexer、Tool 都可作为 Eino node 接入。
+- 业务层不再定义与 Eino 同名同义的接口。
+- 本地 SQLite 只作为存储适配器，不向上泄露实现细节。
+
 ## P0：前端完整接入现有后端接口
 
 ### 目标
