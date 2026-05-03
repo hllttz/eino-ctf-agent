@@ -8,9 +8,9 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"eino_ctf_agent/internal/config"
+	"eino_ctf_agent/internal/knowledge"
 	appmodel "eino_ctf_agent/internal/model"
 	"eino_ctf_agent/internal/prompt"
-	"eino_ctf_agent/internal/retriever"
 	"eino_ctf_agent/internal/skill"
 )
 
@@ -74,6 +74,7 @@ func (s *RAGService) buildMessages(ctx context.Context, req *appmodel.ChatReques
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	results = filterRetrievedDocs(results, s.cfg.RAG.ScoreThreshold)
 
 	matchedSkills := s.matchSkills(query)
 	activeSkills := toSkillRefs(matchedSkills)
@@ -81,11 +82,11 @@ func (s *RAGService) buildMessages(ctx context.Context, req *appmodel.ChatReques
 	citations := make([]appmodel.Citation, 0, len(results))
 	for _, doc := range results {
 		citations = append(citations, appmodel.Citation{
-			DocumentID: metadataString(doc, retriever.MetaDocumentID),
-			Filename:   metadataString(doc, retriever.MetaFilename),
-			ChunkIndex: metadataInt(doc, retriever.MetaChunkIndex),
+			DocumentID: knowledge.MetadataString(doc, knowledge.MetaDocumentID),
+			Filename:   knowledge.MetadataString(doc, knowledge.MetaFilename),
+			ChunkIndex: knowledge.MetadataInt(doc, knowledge.MetaChunkIndex),
 			Score:      doc.Score(),
-			PageNumber: metadataInt(doc, retriever.MetaPageNumber),
+			PageNumber: knowledge.MetadataInt(doc, knowledge.MetaPageNumber),
 		})
 	}
 
@@ -100,34 +101,17 @@ func (s *RAGService) buildMessages(ctx context.Context, req *appmodel.ChatReques
 	return messages, citations, activeSkills, nil
 }
 
-func metadataString(doc *schema.Document, key string) string {
-	if doc == nil || doc.MetaData == nil {
-		return ""
+func filterRetrievedDocs(docs []*schema.Document, threshold float64) []*schema.Document {
+	if threshold <= 0 {
+		return docs
 	}
-	value, ok := doc.MetaData[key]
-	if !ok {
-		return ""
+	filtered := docs[:0]
+	for _, doc := range docs {
+		if doc.Score() >= threshold {
+			filtered = append(filtered, doc)
+		}
 	}
-	if s, ok := value.(string); ok {
-		return s
-	}
-	return ""
-}
-
-func metadataInt(doc *schema.Document, key string) int {
-	if doc == nil || doc.MetaData == nil {
-		return 0
-	}
-	switch value := doc.MetaData[key].(type) {
-	case int:
-		return value
-	case int64:
-		return int(value)
-	case float64:
-		return int(value)
-	default:
-		return 0
-	}
+	return filtered
 }
 
 func (s *RAGService) matchSkills(query string) []skill.Skill {

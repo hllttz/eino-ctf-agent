@@ -36,8 +36,18 @@ rag:
 storage:
   docs_dir: ./data/docs
   skills_dir: ./data/skills
-  metadata_db: ./metadata_db/app.sqlite
-  vector_db: ./vector_db/vector.sqlite
+
+redis:
+  # Requires Redis Stack or Redis with RediSearch/Vector Search enabled.
+  addr: 127.0.0.1:6379
+  username: ""
+  password_env: REDIS_PASSWORD
+  db: 0
+  key_prefix: eino_ctf_agent:
+  index: idx:eino_ctf_agent_chunks
+  vector_field: vector_content
+  distance_threshold: 0
+  dialect: 2
 
 skills:
   enabled: true

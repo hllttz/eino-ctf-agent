@@ -1,4 +1,4 @@
-package service
+package knowledge
 
 import (
 	"context"
@@ -12,47 +12,38 @@ import (
 	"strings"
 	"time"
 
+	einoindexer "github.com/cloudwego/eino/components/indexer"
+	"github.com/cloudwego/eino/schema"
+	goredis "github.com/redis/go-redis/v9"
+
 	"eino_ctf_agent/internal/config"
-	"eino_ctf_agent/internal/embedding"
 	"eino_ctf_agent/internal/model"
-	"eino_ctf_agent/internal/parser"
-	"eino_ctf_agent/internal/splitter"
-	"eino_ctf_agent/internal/store"
-	"eino_ctf_agent/internal/vectorstore"
 )
 
-type KnowledgeService struct {
+type Service struct {
 	cfg          *config.Config
-	embedder     embedding.Embedder
-	vectorStore  vectorstore.VectorStore
-	documentRepo *store.DocumentRepo
-	chunkRepo    *store.ChunkRepo
+	redisClient  *goredis.Client
+	indexer      einoindexer.Indexer
+	documentRepo *MetadataRepo
 	indexLimiter chan struct{}
 }
 
-func NewKnowledgeService(
-	cfg *config.Config,
-	embedder embedding.Embedder,
-	vectorStore vectorstore.VectorStore,
-	documentRepo *store.DocumentRepo,
-	chunkRepo *store.ChunkRepo,
-) *KnowledgeService {
-	return &KnowledgeService{
+func NewService(cfg *config.Config, redisClient *goredis.Client, indexer einoindexer.Indexer, documentRepo *MetadataRepo) *Service {
+	return &Service{
 		cfg:          cfg,
-		embedder:     embedder,
-		vectorStore:  vectorStore,
+		redisClient:  redisClient,
+		indexer:      indexer,
 		documentRepo: documentRepo,
-		chunkRepo:    chunkRepo,
 		indexLimiter: make(chan struct{}, 2),
 	}
 }
 
-func (s *KnowledgeService) UploadMarkdown(ctx context.Context, filename string, reader io.Reader) (*model.Document, error) {
-	if s.embedder == nil || s.vectorStore == nil {
+func (s *Service) UploadMarkdown(ctx context.Context, filename string, reader io.Reader) (*model.Document, error) {
+	if s.indexer == nil || s.redisClient == nil {
 		return nil, fmt.Errorf("knowledge service is not fully initialized")
 	}
 	if !isMarkdownFilename(filename) {
-		return nil, fmt.Errorf("only markdown files are supported in MVP")
+		return nil, fmt.Errorf("only markdown files are supported")
 	}
 
 	content, err := io.ReadAll(io.LimitReader(reader, 20<<20))
@@ -93,19 +84,16 @@ func (s *KnowledgeService) UploadMarkdown(ctx context.Context, filename string, 
 	return doc, nil
 }
 
-func (s *KnowledgeService) ListDocuments(ctx context.Context) ([]model.Document, error) {
+func (s *Service) ListDocuments(ctx context.Context) ([]model.Document, error) {
 	return s.documentRepo.List(ctx)
 }
 
-func (s *KnowledgeService) DeleteDocument(ctx context.Context, id string) error {
+func (s *Service) DeleteDocument(ctx context.Context, id string) error {
 	doc, err := s.documentRepo.Get(ctx, id)
 	if err != nil {
 		return err
 	}
-	if err := s.vectorStore.DeleteByDocumentID(ctx, id); err != nil {
-		return err
-	}
-	if err := s.chunkRepo.DeleteByDocumentID(ctx, id); err != nil {
+	if err := s.deleteDocumentChunks(ctx, id, doc.ChunkCount); err != nil {
 		return err
 	}
 	if err := s.documentRepo.Delete(ctx, id); err != nil {
@@ -119,7 +107,7 @@ func (s *KnowledgeService) DeleteDocument(ctx context.Context, id string) error 
 	return nil
 }
 
-func (s *KnowledgeService) enqueueMarkdownIndex(doc *model.Document, content string) {
+func (s *Service) enqueueMarkdownIndex(doc *model.Document, content string) {
 	go func() {
 		s.indexLimiter <- struct{}{}
 		defer func() { <-s.indexLimiter }()
@@ -134,11 +122,11 @@ func (s *KnowledgeService) enqueueMarkdownIndex(doc *model.Document, content str
 	}()
 }
 
-func (s *KnowledgeService) indexMarkdown(ctx context.Context, doc *model.Document, content string) error {
+func (s *Service) indexMarkdown(ctx context.Context, doc *model.Document, content string) error {
 	if err := s.documentRepo.UpdateStatus(ctx, doc.ID, model.DocumentStatusParsing, ""); err != nil {
 		return err
 	}
-	blocks, err := parser.ParseMarkdown(content)
+	blocks, err := ParseMarkdown(content)
 	if err != nil {
 		return err
 	}
@@ -146,7 +134,7 @@ func (s *KnowledgeService) indexMarkdown(ctx context.Context, doc *model.Documen
 	if err := s.documentRepo.UpdateStatus(ctx, doc.ID, model.DocumentStatusChunking, ""); err != nil {
 		return err
 	}
-	textSplitter, err := splitter.NewTextSplitter(s.cfg.RAG.ChunkSize, s.cfg.RAG.ChunkOverlap)
+	textSplitter, err := NewTextSplitter(s.cfg.RAG.ChunkSize, s.cfg.RAG.ChunkOverlap)
 	if err != nil {
 		return err
 	}
@@ -155,58 +143,65 @@ func (s *KnowledgeService) indexMarkdown(ctx context.Context, doc *model.Documen
 		return fmt.Errorf("markdown file produced no chunks")
 	}
 
-	texts := make([]string, len(textChunks))
-	for i, chunk := range textChunks {
-		texts[i] = chunk.Content
-	}
-
 	if err := s.documentRepo.UpdateStatus(ctx, doc.ID, model.DocumentStatusEmbedding, ""); err != nil {
 		return err
 	}
-	vectors, err := s.embedder.EmbedStrings(ctx, texts)
-	if err != nil {
+	if err := s.deleteDocumentChunks(ctx, doc.ID, doc.ChunkCount); err != nil {
 		return err
 	}
-	if len(vectors) != len(textChunks) {
-		return fmt.Errorf("embedding count mismatch: got %d, want %d", len(vectors), len(textChunks))
-	}
 
-	chunks := make([]store.Chunk, len(textChunks))
-	records := make([]vectorstore.VectorRecord, len(textChunks))
+	docs := make([]*schema.Document, 0, len(textChunks))
 	for i, chunk := range textChunks {
 		chunkID := fmt.Sprintf("%s:%d", doc.ID, i)
-		chunks[i] = store.Chunk{
-			ID:          chunkID,
-			DocumentID:  doc.ID,
-			Filename:    doc.Filename,
-			FileType:    doc.FileType,
-			ChunkIndex:  i,
-			HeadingPath: chunk.HeadingPath,
-			Content:     chunk.Content,
-		}
-		records[i] = vectorstore.VectorRecord{
-			ID:          chunkID,
-			DocumentID:  doc.ID,
-			ChunkID:     chunkID,
-			Filename:    doc.Filename,
-			FileType:    doc.FileType,
-			ChunkIndex:  i,
-			HeadingPath: chunk.HeadingPath,
-			Content:     chunk.Content,
-			Embedding:   vectors[i],
-		}
+		docs = append(docs, &schema.Document{
+			ID:      chunkID,
+			Content: chunk.Content,
+			MetaData: map[string]any{
+				MetaDocumentID:  doc.ID,
+				MetaFilename:    doc.Filename,
+				MetaFileType:    doc.FileType,
+				MetaChunkIndex:  i,
+				MetaHeadingPath: chunk.HeadingPath,
+				MetaPageNumber:  0,
+				MetaSourcePath:  doc.SourcePath,
+			},
+		})
 	}
 
-	if err := s.chunkRepo.CreateMany(ctx, chunks); err != nil {
+	if _, err := s.indexer.Store(ctx, docs); err != nil {
 		return err
 	}
-	if err := s.vectorStore.Upsert(ctx, records); err != nil {
-		return err
-	}
-	if err := s.documentRepo.UpdateChunkCount(ctx, doc.ID, len(chunks)); err != nil {
+	if err := s.documentRepo.UpdateChunkCount(ctx, doc.ID, len(docs)); err != nil {
 		return err
 	}
 	return s.documentRepo.UpdateStatus(ctx, doc.ID, model.DocumentStatusIndexed, "")
+}
+
+func (s *Service) deleteDocumentChunks(ctx context.Context, docID string, chunkCount int) error {
+	keys := make(map[string]struct{}, chunkCount)
+	for i := 0; i < chunkCount; i++ {
+		keys[ChunkKey(s.cfg, fmt.Sprintf("%s:%d", docID, i))] = struct{}{}
+	}
+
+	iter := s.redisClient.Scan(ctx, 0, ChunkKeyPrefix(s.cfg)+docID+":*", 100).Iterator()
+	for iter.Next(ctx) {
+		keys[iter.Val()] = struct{}{}
+	}
+	if err := iter.Err(); err != nil {
+		return fmt.Errorf("scan redis chunks for document %s: %w", docID, err)
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+
+	chunkKeys := make([]string, 0, len(keys))
+	for key := range keys {
+		chunkKeys = append(chunkKeys, key)
+	}
+	if err := s.redisClient.Del(ctx, chunkKeys...).Err(); err != nil {
+		return fmt.Errorf("delete redis chunks for document %s: %w", docID, err)
+	}
+	return nil
 }
 
 func isMarkdownFilename(filename string) bool {

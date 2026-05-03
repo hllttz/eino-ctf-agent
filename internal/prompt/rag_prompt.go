@@ -6,13 +6,11 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
-	"eino_ctf_agent/internal/retriever"
+	"eino_ctf_agent/internal/knowledge"
 	"eino_ctf_agent/internal/skill"
 )
 
-const ragSystemIntro = `你是一个本地知识库问答助手。请优先基于提供的知识库上下文回答。
-如果上下文没有直接依据，必须明确说明“当前知识库中没有找到直接依据”，再给出谨慎的通用建议。
-回答要清晰、可操作，涉及不确定信息时说明依据不足。`
+const ragSystemIntro = `你是一个本地知识库问答助手。请优先基于提供的知识库上下文回答。如果上下文没有直接依据，必须明确说明“当前知识库中没有找到直接依据”，再给出谨慎的通用建议。回答要清晰、可操作；涉及不确定信息时说明依据不足。`
 
 func BuildRAGSystemPrompt(docs []*schema.Document, activeSkills []skill.Skill, maxContextChunks int) string {
 	var b strings.Builder
@@ -54,43 +52,13 @@ func appendRetrievedContext(b *strings.Builder, docs []*schema.Document, maxCont
 		doc := docs[i]
 		b.WriteString(fmt.Sprintf(
 			"<doc source=%q document_id=%q chunk=%d score=%.4f heading=%q>\n%s\n</doc>\n\n",
-			metadataString(doc, retriever.MetaFilename),
-			metadataString(doc, retriever.MetaDocumentID),
-			metadataInt(doc, retriever.MetaChunkIndex),
+			knowledge.MetadataString(doc, knowledge.MetaFilename),
+			knowledge.MetadataString(doc, knowledge.MetaDocumentID),
+			knowledge.MetadataInt(doc, knowledge.MetaChunkIndex),
 			doc.Score(),
-			metadataString(doc, retriever.MetaHeadingPath),
+			knowledge.MetadataString(doc, knowledge.MetaHeadingPath),
 			doc.Content,
 		))
-	}
-}
-
-func metadataString(doc *schema.Document, key string) string {
-	if doc == nil || doc.MetaData == nil {
-		return ""
-	}
-	value, ok := doc.MetaData[key]
-	if !ok {
-		return ""
-	}
-	if s, ok := value.(string); ok {
-		return s
-	}
-	return ""
-}
-
-func metadataInt(doc *schema.Document, key string) int {
-	if doc == nil || doc.MetaData == nil {
-		return 0
-	}
-	switch value := doc.MetaData[key].(type) {
-	case int:
-		return value
-	case int64:
-		return int(value)
-	case float64:
-		return int(value)
-	default:
-		return 0
 	}
 }
 

@@ -11,14 +11,12 @@ import (
 	"eino_ctf_agent/internal/config"
 	"eino_ctf_agent/internal/embedding"
 	"eino_ctf_agent/internal/handler"
+	"eino_ctf_agent/internal/knowledge"
 	"eino_ctf_agent/internal/llm"
 	"eino_ctf_agent/internal/middleware"
-	"eino_ctf_agent/internal/retriever"
 	"eino_ctf_agent/internal/router"
 	"eino_ctf_agent/internal/service"
 	"eino_ctf_agent/internal/skill"
-	"eino_ctf_agent/internal/store"
-	"eino_ctf_agent/internal/vectorstore"
 )
 
 func main() {
@@ -46,21 +44,25 @@ func main() {
 		log.Fatalf("[FATAL] failed to create embedder: %v", err)
 	}
 
-	metadataDB, err := store.Open(ctx, cfg.Storage.MetadataDB)
-	if err != nil {
-		log.Fatalf("[FATAL] failed to open metadata db: %v", err)
+	redisClient := knowledge.NewRedisClient(cfg)
+	defer redisClient.Close()
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		log.Fatalf("[FATAL] failed to connect redis: %v", err)
 	}
-	defer metadataDB.Close()
-
-	vectorStore, err := vectorstore.NewSQLiteStore(ctx, cfg.Storage.VectorDB)
-	if err != nil {
-		log.Fatalf("[FATAL] failed to open vector db: %v", err)
+	if err := knowledge.EnsureVectorIndex(ctx, redisClient, cfg); err != nil {
+		log.Fatalf("[FATAL] failed to prepare redis vector index: %v", err)
 	}
-	defer vectorStore.Close()
 
-	documentRepo := store.NewDocumentRepo(metadataDB)
-	chunkRepo := store.NewChunkRepo(metadataDB)
-	knowledgeService := service.NewKnowledgeService(cfg, embedder, vectorStore, documentRepo, chunkRepo)
+	knowledgeIndexer, err := knowledge.NewRedisIndexer(ctx, redisClient, cfg, embedder)
+	if err != nil {
+		log.Fatalf("[FATAL] failed to create redis indexer: %v", err)
+	}
+	knowledgeRetriever, err := knowledge.NewRedisRetriever(ctx, redisClient, cfg, embedder)
+	if err != nil {
+		log.Fatalf("[FATAL] failed to create redis retriever: %v", err)
+	}
+	documentRepo := knowledge.NewMetadataRepo(redisClient, cfg)
+	knowledgeService := knowledge.NewService(cfg, redisClient, knowledgeIndexer, documentRepo)
 
 	skillRegistry, err := skill.NewRegistry(skill.NewLoader(cfg.Storage.SkillsDir))
 	if err != nil {
@@ -69,7 +71,6 @@ func main() {
 	skillRouter := skill.NewRouter(skillRegistry, cfg.Skills.MaxActiveSkills)
 	skillService := service.NewSkillService(skillRegistry)
 
-	knowledgeRetriever := retriever.NewKnowledgeRetriever(embedder, vectorStore)
 	ragService := service.NewRAGService(cfg, chatModel, knowledgeRetriever, skillRouter)
 	chatService := service.NewChatService(chatModel, ragService)
 

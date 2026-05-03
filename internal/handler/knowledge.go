@@ -5,15 +5,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"eino_ctf_agent/internal/knowledge"
 	"eino_ctf_agent/internal/model"
-	"eino_ctf_agent/internal/service"
 )
 
 type KnowledgeHandler struct {
-	knowledgeService *service.KnowledgeService
+	knowledgeService *knowledge.Service
 }
 
-func NewKnowledgeHandler(knowledgeService *service.KnowledgeService) *KnowledgeHandler {
+func NewKnowledgeHandler(knowledgeService *knowledge.Service) *KnowledgeHandler {
 	return &KnowledgeHandler{knowledgeService: knowledgeService}
 }
 

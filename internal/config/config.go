@@ -14,6 +14,7 @@ type Config struct {
 	Embedding EmbeddingConfig `yaml:"embedding"`
 	RAG       RAGConfig       `yaml:"rag"`
 	Storage   StorageConfig   `yaml:"storage"`
+	Redis     RedisConfig     `yaml:"redis"`
 	Skills    SkillsConfig    `yaml:"skills"`
 	Agent     AgentConfig     `yaml:"agent"`
 }
@@ -57,10 +58,20 @@ type RAGConfig struct {
 }
 
 type StorageConfig struct {
-	DocsDir    string `yaml:"docs_dir"`
-	SkillsDir  string `yaml:"skills_dir"`
-	MetadataDB string `yaml:"metadata_db"`
-	VectorDB   string `yaml:"vector_db"`
+	DocsDir   string `yaml:"docs_dir"`
+	SkillsDir string `yaml:"skills_dir"`
+}
+
+type RedisConfig struct {
+	Addr              string  `yaml:"addr"`
+	Username          string  `yaml:"username"`
+	PasswordEnv       string  `yaml:"password_env"`
+	DB                int     `yaml:"db"`
+	KeyPrefix         string  `yaml:"key_prefix"`
+	Index             string  `yaml:"index"`
+	VectorField       string  `yaml:"vector_field"`
+	DistanceThreshold float64 `yaml:"distance_threshold"`
+	Dialect           int     `yaml:"dialect"`
 }
 
 type SkillsConfig struct {
@@ -171,11 +182,24 @@ func (c *Config) applyDefaults() {
 	if c.Storage.SkillsDir == "" {
 		c.Storage.SkillsDir = "./data/skills"
 	}
-	if c.Storage.MetadataDB == "" {
-		c.Storage.MetadataDB = "./metadata_db/app.sqlite"
+
+	if c.Redis.Addr == "" {
+		c.Redis.Addr = "127.0.0.1:6379"
 	}
-	if c.Storage.VectorDB == "" {
-		c.Storage.VectorDB = "./vector_db/vector.sqlite"
+	if c.Redis.PasswordEnv == "" {
+		c.Redis.PasswordEnv = "REDIS_PASSWORD"
+	}
+	if c.Redis.KeyPrefix == "" {
+		c.Redis.KeyPrefix = "eino_ctf_agent:"
+	}
+	if c.Redis.Index == "" {
+		c.Redis.Index = "idx:eino_ctf_agent_chunks"
+	}
+	if c.Redis.VectorField == "" {
+		c.Redis.VectorField = "vector_content"
+	}
+	if c.Redis.Dialect == 0 {
+		c.Redis.Dialect = 2
 	}
 
 	if c.Skills.MaxActiveSkills == 0 {
@@ -198,6 +222,9 @@ func (c *Config) validate() error {
 	if c.RAG.ChunkOverlap >= c.RAG.ChunkSize {
 		errs = append(errs, "rag.chunk_overlap must be smaller than rag.chunk_size")
 	}
+	if c.Embedding.Dimension <= 0 {
+		errs = append(errs, "embedding.dimension must be positive")
+	}
 	if len(errs) > 0 {
 		return fmt.Errorf("%s", strings.Join(errs, "; "))
 	}
@@ -210,6 +237,13 @@ func (c *Config) GetLLMAPIKey() string {
 
 func (c *Config) GetEmbeddingAPIKey() string {
 	return os.Getenv(c.Embedding.APIKeyEnv)
+}
+
+func (c *Config) GetRedisPassword() string {
+	if c.Redis.PasswordEnv == "" {
+		return ""
+	}
+	return os.Getenv(c.Redis.PasswordEnv)
 }
 
 func (c *Config) Addr() string {
