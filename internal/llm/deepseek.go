@@ -11,9 +11,6 @@ import (
 	"eino_ctf_agent/internal/config"
 )
 
-// NewDeepSeekChatModel 根据配置创建 DeepSeek ChatModel。
-// DeepSeek 提供 OpenAI-compatible API，所以使用 eino-ext 的 openai 组件。
-// 业务层不应直接调用此函数，应通过 NewChatModel factory 创建。
 func NewDeepSeekChatModel(ctx context.Context, cfg *config.Config) (model.BaseChatModel, error) {
 	apiKey := cfg.GetLLMAPIKey()
 	if apiKey == "" {
@@ -24,16 +21,15 @@ func NewDeepSeekChatModel(ctx context.Context, cfg *config.Config) (model.BaseCh
 	maxTokens := cfg.LLM.MaxTokens
 
 	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
-		APIKey:    apiKey,
-		BaseURL:   cfg.LLM.BaseURL,
-		Model:     cfg.LLM.Model,
-		MaxTokens: &maxTokens,
+		APIKey:      apiKey,
+		BaseURL:     cfg.LLM.BaseURL,
+		Model:       cfg.LLM.Model,
+		MaxTokens:   &maxTokens,
 		Temperature: &temperature,
-		Timeout:   30 * time.Second,
+		Timeout:     60 * time.Second,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create DeepSeek ChatModel: %w", err)
+		return nil, fmt.Errorf("create DeepSeek ChatModel: %w", err)
 	}
-
 	return chatModel, nil
 }

@@ -1,4 +1,8 @@
 package embedding
 
-// TODO Phase 3: 定义 Embedder 接口。
-// 业务层通过此接口调用 embedding，不直接依赖 Qwen / DashScope 实现。
+import "context"
+
+type Embedder interface {
+	EmbedStrings(ctx context.Context, texts []string) ([][]float64, error)
+	Dimension() int
+}

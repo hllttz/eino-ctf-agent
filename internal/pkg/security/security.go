@@ -1,6 +1,48 @@
 package security
 
-// TODO Phase 6: 安全工具。
-// 包含路径穿越检测、skill_name 合法性校验等。
-// skill_name 只允许 [a-zA-Z0-9_-]。
-// 禁止读取 .env、数据库文件、配置文件、私钥文件。
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+)
+
+var skillNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+func ValidSkillName(name string) bool {
+	return skillNamePattern.MatchString(name)
+}
+
+func SafeJoin(baseDir, path string) (string, error) {
+	baseAbs, err := filepath.Abs(baseDir)
+	if err != nil {
+		return "", err
+	}
+	targetAbs, err := filepath.Abs(filepath.Join(baseAbs, path))
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(baseAbs, targetAbs)
+	if err != nil {
+		return "", err
+	}
+	if rel == "." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || rel == ".." || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("path escapes base directory")
+	}
+	return targetAbs, nil
+}
+
+func ForbiddenSensitiveFile(path string) bool {
+	name := strings.ToLower(filepath.Base(path))
+	ext := strings.ToLower(filepath.Ext(path))
+	if name == ".env" || strings.Contains(name, "secret") || strings.Contains(name, "private") {
+		return true
+	}
+	switch ext {
+	case ".db", ".sqlite", ".sqlite3", ".key", ".pem", ".crt", ".p12":
+		return true
+	default:
+		return false
+	}
+}

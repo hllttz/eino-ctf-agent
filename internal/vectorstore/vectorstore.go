@@ -1,5 +1,28 @@
 package vectorstore
 
-// TODO Phase 4A: VectorStore 接口定义。
-// 业务层只调用接口，不直接操作 SQLite 向量表。
-// SQLite 只是 MVP 实现，后续可替换为 Milvus / Elasticsearch / Redis / Qdrant。
+import "context"
+
+type VectorStore interface {
+	Upsert(ctx context.Context, records []VectorRecord) error
+	Search(ctx context.Context, query []float64, opts SearchOptions) ([]SearchResult, error)
+	DeleteByDocumentID(ctx context.Context, documentID string) error
+	Close() error
+}
+
+type VectorRecord struct {
+	ID          string
+	DocumentID  string
+	ChunkID     string
+	Filename    string
+	FileType    string
+	ChunkIndex  int
+	HeadingPath string
+	Content     string
+	PageNumber  int
+	Embedding   []float64
+}
+
+type SearchResult struct {
+	Record VectorRecord
+	Score  float64
+}

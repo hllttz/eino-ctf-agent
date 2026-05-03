@@ -1,4 +1,19 @@
 package skill
 
-// TODO Phase 6: Skill 数据模型。
-// 包含 YAML front-matter 解析后的结构体。
+type Skill struct {
+	Name        string   `json:"name" yaml:"name"`
+	Title       string   `json:"title" yaml:"title"`
+	Description string   `json:"description" yaml:"description"`
+	Triggers    []string `json:"triggers" yaml:"triggers"`
+	Enabled     bool     `json:"enabled" yaml:"enabled"`
+	Priority    int      `json:"priority" yaml:"priority"`
+	MaxTokens   int      `json:"max_tokens" yaml:"max_tokens"`
+	Body        string   `json:"body,omitempty" yaml:"-"`
+	Path        string   `json:"-" yaml:"-"`
+}
+
+func (s Skill) WithoutBody() Skill {
+	s.Body = ""
+	s.Path = ""
+	return s
+}

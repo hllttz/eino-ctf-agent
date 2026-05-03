@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"log"
 
 	einomodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -11,41 +10,75 @@ import (
 	appmodel "eino_ctf_agent/internal/model"
 )
 
-// ChatService 处理聊天业务逻辑。
-// 只依赖 Eino 的 BaseChatModel 抽象接口，不直接依赖 DeepSeek 包。
 type ChatService struct {
-	chatModel einomodel.BaseChatModel
+	chatModel  einomodel.BaseChatModel
+	ragService *RAGService
 }
 
-// NewChatService 创建 ChatService 实例。
-func NewChatService(chatModel einomodel.BaseChatModel) *ChatService {
-	return &ChatService{
-		chatModel: chatModel,
+type ChatStream struct {
+	Reader    *schema.StreamReader[*schema.Message]
+	Citations []appmodel.Citation
+	Skills    []appmodel.SkillRef
+}
+
+func NewChatService(chatModel einomodel.BaseChatModel, ragService *RAGService) *ChatService {
+	return &ChatService{chatModel: chatModel, ragService: ragService}
+}
+
+func (s *ChatService) Chat(ctx context.Context, req *appmodel.ChatRequest) (*appmodel.ChatResponse, error) {
+	if err := validateChatRequest(req); err != nil {
+		return nil, err
 	}
+	if s.ragService != nil {
+		return s.ragService.Generate(ctx, req)
+	}
+
+	messages := toSchemaMessages(req.Messages)
+	resp, err := s.chatModel.Generate(ctx, messages)
+	if err != nil {
+		return nil, fmt.Errorf("LLM generate failed: %w", err)
+	}
+	return &appmodel.ChatResponse{Reply: resp.Content}, nil
 }
 
-// Chat 执行非流式对话，返回完整回复。
-func (s *ChatService) Chat(ctx context.Context, req *appmodel.ChatRequest) (string, error) {
-	// 将前端消息格式转换为 Eino schema.Message
-	messages := make([]*schema.Message, 0, len(req.Messages))
-	for _, msg := range req.Messages {
-		messages = append(messages, &schema.Message{
+func (s *ChatService) Stream(ctx context.Context, req *appmodel.ChatRequest) (*ChatStream, error) {
+	if err := validateChatRequest(req); err != nil {
+		return nil, err
+	}
+	if s.ragService != nil {
+		return s.ragService.Stream(ctx, req)
+	}
+
+	reader, err := s.chatModel.Stream(ctx, toSchemaMessages(req.Messages))
+	if err != nil {
+		return nil, fmt.Errorf("LLM stream failed: %w", err)
+	}
+	return &ChatStream{Reader: reader}, nil
+}
+
+func validateChatRequest(req *appmodel.ChatRequest) error {
+	if req == nil || len(req.Messages) == 0 {
+		return fmt.Errorf("messages are required")
+	}
+	for i, msg := range req.Messages {
+		if msg.Content == "" {
+			return fmt.Errorf("message %d content is empty", i)
+		}
+	}
+	return nil
+}
+
+func toSchemaMessages(messages []appmodel.ChatMessage) []*schema.Message {
+	out := make([]*schema.Message, 0, len(messages))
+	for _, msg := range messages {
+		out = append(out, &schema.Message{
 			Role:    toSchemaRole(msg.Role),
 			Content: msg.Content,
 		})
 	}
-
-	// 调用 LLM Generate
-	resp, err := s.chatModel.Generate(ctx, messages)
-	if err != nil {
-		log.Printf("[ERROR] LLM Generate failed: %v", err)
-		return "", fmt.Errorf("LLM generate failed: %w", err)
-	}
-
-	return resp.Content, nil
+	return out
 }
 
-// toSchemaRole 将字符串角色转换为 Eino 的 RoleType。
 func toSchemaRole(role string) schema.RoleType {
 	switch role {
 	case "user":

@@ -8,8 +8,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config 是项目的顶层配置结构，与 config.example.yaml 完全对应。
-// Phase 0 只使用 Server 部分，其余字段在后续 Phase 中逐步启用。
 type Config struct {
 	Server    ServerConfig    `yaml:"server"`
 	LLM       LLMConfig       `yaml:"llm"`
@@ -20,19 +18,16 @@ type Config struct {
 	Agent     AgentConfig     `yaml:"agent"`
 }
 
-// ServerConfig 定义 HTTP 服务参数。
 type ServerConfig struct {
 	Host string     `yaml:"host"`
 	Port int        `yaml:"port"`
 	CORS CORSConfig `yaml:"cors"`
 }
 
-// CORSConfig 定义跨域允许的来源列表。
 type CORSConfig struct {
 	AllowOrigins []string `yaml:"allow_origins"`
 }
 
-// LLMConfig 定义 DeepSeek ChatModel 参数。
 type LLMConfig struct {
 	Provider      string  `yaml:"provider"`
 	Model         string  `yaml:"model"`
@@ -44,7 +39,6 @@ type LLMConfig struct {
 	MaxTokens     int     `yaml:"max_tokens"`
 }
 
-// EmbeddingConfig 定义 Qwen Embedding 参数。
 type EmbeddingConfig struct {
 	Provider  string `yaml:"provider"`
 	Model     string `yaml:"model"`
@@ -54,7 +48,6 @@ type EmbeddingConfig struct {
 	BatchSize int    `yaml:"batch_size"`
 }
 
-// RAGConfig 定义 RAG 检索参数。
 type RAGConfig struct {
 	TopK             int     `yaml:"top_k"`
 	ScoreThreshold   float64 `yaml:"score_threshold"`
@@ -63,7 +56,6 @@ type RAGConfig struct {
 	MaxContextChunks int     `yaml:"max_context_chunks"`
 }
 
-// StorageConfig 定义存储路径。
 type StorageConfig struct {
 	DocsDir    string `yaml:"docs_dir"`
 	SkillsDir  string `yaml:"skills_dir"`
@@ -71,22 +63,18 @@ type StorageConfig struct {
 	VectorDB   string `yaml:"vector_db"`
 }
 
-// SkillsConfig 定义 Skills 系统参数。
 type SkillsConfig struct {
 	Enabled         bool `yaml:"enabled"`
 	MaxActiveSkills int  `yaml:"max_active_skills"`
 	AllowReload     bool `yaml:"allow_reload"`
 }
 
-// AgentConfig 定义 Agent 运行模式。
 type AgentConfig struct {
 	Mode          string `yaml:"mode"`
 	MaxSteps      int    `yaml:"max_steps"`
 	ShowToolCalls bool   `yaml:"show_tool_calls"`
 }
 
-// Load 从指定路径加载 YAML 配置文件，并应用默认值。
-// 配置文件路径查找顺序：参数 path → 环境变量 CONFIG_PATH → 默认 configs/config.yaml。
 func Load(path string) (*Config, error) {
 	if path == "" {
 		path = os.Getenv("CONFIG_PATH")
@@ -97,26 +85,22 @@ func Load(path string) (*Config, error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
+		return nil, fmt.Errorf("read config file %s: %w", path, err)
 	}
 
 	cfg := &Config{}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
+		return nil, fmt.Errorf("parse config file %s: %w", path, err)
 	}
 
 	cfg.applyDefaults()
-
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("config validation failed: %w", err)
 	}
-
 	return cfg, nil
 }
 
-// applyDefaults 为未设置的字段填充合理默认值。
 func (c *Config) applyDefaults() {
-	// Server defaults
 	if c.Server.Host == "" {
 		c.Server.Host = "0.0.0.0"
 	}
@@ -127,7 +111,6 @@ func (c *Config) applyDefaults() {
 		c.Server.CORS.AllowOrigins = []string{"http://localhost:5173"}
 	}
 
-	// LLM defaults
 	if c.LLM.Provider == "" {
 		c.LLM.Provider = "deepseek"
 	}
@@ -147,7 +130,6 @@ func (c *Config) applyDefaults() {
 		c.LLM.MaxTokens = 4096
 	}
 
-	// Embedding defaults
 	if c.Embedding.Provider == "" {
 		c.Embedding.Provider = "dashscope"
 	}
@@ -167,7 +149,6 @@ func (c *Config) applyDefaults() {
 		c.Embedding.BatchSize = 10
 	}
 
-	// RAG defaults
 	if c.RAG.TopK == 0 {
 		c.RAG.TopK = 5
 	}
@@ -184,7 +165,6 @@ func (c *Config) applyDefaults() {
 		c.RAG.MaxContextChunks = 5
 	}
 
-	// Storage defaults
 	if c.Storage.DocsDir == "" {
 		c.Storage.DocsDir = "./data/docs"
 	}
@@ -198,12 +178,10 @@ func (c *Config) applyDefaults() {
 		c.Storage.VectorDB = "./vector_db/vector.sqlite"
 	}
 
-	// Skills defaults
 	if c.Skills.MaxActiveSkills == 0 {
 		c.Skills.MaxActiveSkills = 3
 	}
 
-	// Agent defaults
 	if c.Agent.Mode == "" {
 		c.Agent.Mode = "simple_rag"
 	}
@@ -212,31 +190,28 @@ func (c *Config) applyDefaults() {
 	}
 }
 
-// validate 校验关键配置字段。Phase 0 只校验 Server 字段。
 func (c *Config) validate() error {
 	var errs []string
-
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		errs = append(errs, fmt.Sprintf("server.port must be 1-65535, got %d", c.Server.Port))
 	}
-
+	if c.RAG.ChunkOverlap >= c.RAG.ChunkSize {
+		errs = append(errs, "rag.chunk_overlap must be smaller than rag.chunk_size")
+	}
 	if len(errs) > 0 {
 		return fmt.Errorf("%s", strings.Join(errs, "; "))
 	}
 	return nil
 }
 
-// GetLLMAPIKey 从环境变量中获取 LLM API Key。
 func (c *Config) GetLLMAPIKey() string {
 	return os.Getenv(c.LLM.APIKeyEnv)
 }
 
-// GetEmbeddingAPIKey 从环境变量中获取 Embedding API Key。
 func (c *Config) GetEmbeddingAPIKey() string {
 	return os.Getenv(c.Embedding.APIKeyEnv)
 }
 
-// Addr 返回 "host:port" 格式的监听地址。
 func (c *Config) Addr() string {
 	return fmt.Sprintf("%s:%d", c.Server.Host, c.Server.Port)
 }
