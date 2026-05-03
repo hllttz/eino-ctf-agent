@@ -1,0 +1,50 @@
+# ===== Go =====
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+
+# ===== Build =====
+/bin/
+/dist/
+/tmp/
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ===== Config & Secrets =====
+.env
+configs/config.yaml
+config.yaml
+
+# ===== Database =====
+metadata_db/*.sqlite
+metadata_db/*.sqlite-journal
+metadata_db/*.sqlite-wal
+metadata_db/*.sqlite-shm
+vector_db/*.sqlite
+vector_db/*.sqlite-journal
+vector_db/*.sqlite-wal
+vector_db/*.sqlite-shm
+
+# ===== Uploaded data =====
+data/docs/markdown/*.md
+data/docs/pdf/*.pdf
+
+# ===== Node / Vue =====
+web/node_modules/
+web/dist/
+web/.env
+web/.env.local
+
+# ===== OS =====
+.DS_Store
+Thumbs.db

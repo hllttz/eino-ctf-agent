@@ -1,0 +1,50 @@
+# Eino CTF Agent 配置文件模板
+# 复制此文件为 configs/config.yaml 并根据实际情况修改
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  cors:
+    allow_origins:
+      - http://localhost:5173
+
+llm:
+  provider: deepseek
+  model: deepseek-v4-flash
+  fallback_model: deepseek-v4-pro
+  base_url: https://api.deepseek.com
+  api_key_env: DEEPSEEK_API_KEY       # 从环境变量读取，不要直接写 key
+  thinking: false
+  temperature: 0.7
+  max_tokens: 4096
+
+embedding:
+  provider: dashscope
+  model: text-embedding-v4
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  api_key_env: DASHSCOPE_API_KEY      # 从环境变量读取，不要直接写 key
+  dimension: 1024
+  batch_size: 10
+
+rag:
+  top_k: 5
+  score_threshold: 0.35
+  chunk_size: 512
+  chunk_overlap: 64
+  max_context_chunks: 5
+
+storage:
+  docs_dir: ./data/docs
+  skills_dir: ./data/skills
+  metadata_db: ./metadata_db/app.sqlite
+  vector_db: ./vector_db/vector.sqlite
+
+skills:
+  enabled: true
+  max_active_skills: 3
+  allow_reload: true
+
+agent:
+  mode: simple_rag                    # simple_rag | tool_agent | react
+  max_steps: 5
+  show_tool_calls: true
