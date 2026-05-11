@@ -9,6 +9,7 @@ import (
 	"eino_ctf_agent/internal/model"
 )
 
+// KnowledgeHandler 知识库HTTP处理器，处理文档上传、列表和删除请求。
 type KnowledgeHandler struct {
 	knowledgeService *knowledge.Service
 }

@@ -9,16 +9,19 @@ import (
 
 var markdownHeadingPattern = regexp.MustCompile(`^(#{1,6})\s+(.+?)\s*$`)
 
+// MarkdownBlock Markdown解析后的逻辑块，包含标题路径和正文。
 type MarkdownBlock struct {
 	HeadingPath string
 	Content     string
 }
 
+// TextChunk 文本切分后的片段，用于向量化与检索。
 type TextChunk struct {
 	HeadingPath string
 	Content     string
 }
 
+// TextSplitter 文本分割器，按字符数滑动窗口切分文本块。
 type TextSplitter struct {
 	ChunkSize int
 	Overlap   int

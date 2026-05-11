@@ -11,7 +11,13 @@ import (
 	"eino_ctf_agent/internal/config"
 )
 
+// NewDeepSeekChatModel 创建 DeepSeek ChatModel（BaseChatModel 接口）。
 func NewDeepSeekChatModel(ctx context.Context, cfg *config.Config) (model.BaseChatModel, error) {
+	return NewDeepSeekToolCallingModel(ctx, cfg)
+}
+
+// NewDeepSeekToolCallingModel 创建支持 Tool Calling 的 DeepSeek ChatModel。
+func NewDeepSeekToolCallingModel(ctx context.Context, cfg *config.Config) (model.ToolCallingChatModel, error) {
 	apiKey := cfg.GetLLMAPIKey()
 	if apiKey == "" {
 		return nil, fmt.Errorf("LLM API key not set: environment variable %s is empty", cfg.LLM.APIKeyEnv)

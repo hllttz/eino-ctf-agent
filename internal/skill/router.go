@@ -2,6 +2,7 @@ package skill
 
 import "strings"
 
+// Router 技能路由器，根据用户查询匹配对应的技能。
 type Router struct {
 	registry *Registry
 	max      int

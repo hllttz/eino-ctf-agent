@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// HealthHandler 健康检查HTTP处理器，供负载均衡和探活使用。
 type HealthHandler struct{}
 
 func NewHealthHandler() *HealthHandler {

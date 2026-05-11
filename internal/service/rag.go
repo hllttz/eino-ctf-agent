@@ -14,6 +14,7 @@ import (
 	"eino_ctf_agent/internal/skill"
 )
 
+// RAGService RAG 问答服务，编排检索→技能匹配→提示词构建→LLM 生成全链路。
 type RAGService struct {
 	cfg         *config.Config
 	chatModel   einomodel.BaseChatModel
@@ -21,6 +22,7 @@ type RAGService struct {
 	skillRouter *skill.Router
 }
 
+// NewRAGService 创建 RAG 服务实例，接收 ChatModel、Retriever 和 SkillRouter 依赖。
 func NewRAGService(
 	cfg *config.Config,
 	chatModel einomodel.BaseChatModel,
@@ -35,6 +37,7 @@ func NewRAGService(
 	}
 }
 
+// Generate 执行 RAG 问答，返回完整回复及引用和技能信息。
 func (s *RAGService) Generate(ctx context.Context, req *appmodel.ChatRequest) (*appmodel.ChatResponse, error) {
 	messages, citations, activeSkills, err := s.buildMessages(ctx, req)
 	if err != nil {
@@ -51,6 +54,7 @@ func (s *RAGService) Generate(ctx context.Context, req *appmodel.ChatRequest) (*
 	}, nil
 }
 
+// Stream 执行 RAG 流式问答，返回消息流及引用和技能信息。
 func (s *RAGService) Stream(ctx context.Context, req *appmodel.ChatRequest) (*ChatStream, error) {
 	messages, citations, activeSkills, err := s.buildMessages(ctx, req)
 	if err != nil {
@@ -64,7 +68,7 @@ func (s *RAGService) Stream(ctx context.Context, req *appmodel.ChatRequest) (*Ch
 }
 
 func (s *RAGService) buildMessages(ctx context.Context, req *appmodel.ChatRequest) ([]*schema.Message, []appmodel.Citation, []appmodel.SkillRef, error) {
-	query := lastUserMessage(req.Messages)
+	query := appmodel.LastUserMessage(req.Messages)
 	results, err := s.retriever.Retrieve(
 		ctx,
 		query,
@@ -74,8 +78,6 @@ func (s *RAGService) buildMessages(ctx context.Context, req *appmodel.ChatReques
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	results = filterRetrievedDocs(results, s.cfg.RAG.ScoreThreshold)
-
 	matchedSkills := s.matchSkills(query)
 	activeSkills := toSkillRefs(matchedSkills)
 
@@ -94,24 +96,11 @@ func (s *RAGService) buildMessages(ctx context.Context, req *appmodel.ChatReques
 	messages = append(messages, schema.SystemMessage(prompt.BuildRAGSystemPrompt(results, matchedSkills, s.cfg.RAG.MaxContextChunks)))
 	for _, msg := range req.Messages {
 		messages = append(messages, &schema.Message{
-			Role:    toSchemaRole(msg.Role),
+			Role:    appmodel.ToSchemaRole(msg.Role),
 			Content: msg.Content,
 		})
 	}
 	return messages, citations, activeSkills, nil
-}
-
-func filterRetrievedDocs(docs []*schema.Document, threshold float64) []*schema.Document {
-	if threshold <= 0 {
-		return docs
-	}
-	filtered := docs[:0]
-	for _, doc := range docs {
-		if doc.Score() >= threshold {
-			filtered = append(filtered, doc)
-		}
-	}
-	return filtered
 }
 
 func (s *RAGService) matchSkills(query string) []skill.Skill {
@@ -134,16 +123,4 @@ func toSkillRefs(skills []skill.Skill) []appmodel.SkillRef {
 		})
 	}
 	return refs
-}
-
-func lastUserMessage(messages []appmodel.ChatMessage) string {
-	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role == "user" {
-			return messages[i].Content
-		}
-	}
-	if len(messages) == 0 {
-		return ""
-	}
-	return messages[len(messages)-1].Content
 }

@@ -8,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Config 应用根配置，YAML配置文件反序列化入口，聚合所有子模块配置。
 type Config struct {
 	Server    ServerConfig    `yaml:"server"`
 	LLM       LLMConfig       `yaml:"llm"`
@@ -19,27 +20,32 @@ type Config struct {
 	Agent     AgentConfig     `yaml:"agent"`
 }
 
+// ServerConfig HTTP服务器配置。
 type ServerConfig struct {
 	Host string     `yaml:"host"`
 	Port int        `yaml:"port"`
 	CORS CORSConfig `yaml:"cors"`
 }
 
+// CORSConfig 跨域资源共享配置。
 type CORSConfig struct {
 	AllowOrigins []string `yaml:"allow_origins"`
 }
 
+// LLMConfig 大语言模型配置，控制模型选择、连接参数和生成行为。
 type LLMConfig struct {
-	Provider      string  `yaml:"provider"`
-	Model         string  `yaml:"model"`
-	FallbackModel string  `yaml:"fallback_model"`
-	BaseURL       string  `yaml:"base_url"`
-	APIKeyEnv     string  `yaml:"api_key_env"`
-	Thinking      bool    `yaml:"thinking"`
-	Temperature   float64 `yaml:"temperature"`
-	MaxTokens     int     `yaml:"max_tokens"`
+	Provider      string `yaml:"provider"`
+	Model         string `yaml:"model"`
+	FallbackModel string `yaml:"fallback_model"`
+	BaseURL       string `yaml:"base_url"`
+	APIKeyEnv     string `yaml:"api_key_env"`
+	// 是否启用DeepSeek思考模式（思维链推理）。
+	Thinking    bool    `yaml:"thinking"`
+	Temperature float64 `yaml:"temperature"`
+	MaxTokens   int     `yaml:"max_tokens"`
 }
 
+// EmbeddingConfig 向量嵌入模型配置。
 type EmbeddingConfig struct {
 	Provider  string `yaml:"provider"`
 	Model     string `yaml:"model"`
@@ -49,37 +55,45 @@ type EmbeddingConfig struct {
 	BatchSize int    `yaml:"batch_size"`
 }
 
+// RAGConfig RAG检索与上下文构建参数配置。
 type RAGConfig struct {
-	TopK             int     `yaml:"top_k"`
+	TopK int `yaml:"top_k"`
+	// 检索相似度分数阈值（0~1），低于此分数的结果被过滤。注意与RedisConfig.DistanceThreshold的原始向量距离概念不同。
 	ScoreThreshold   float64 `yaml:"score_threshold"`
 	ChunkSize        int     `yaml:"chunk_size"`
 	ChunkOverlap     int     `yaml:"chunk_overlap"`
 	MaxContextChunks int     `yaml:"max_context_chunks"`
 }
 
+// StorageConfig 本地文件存储路径配置。
 type StorageConfig struct {
 	DocsDir   string `yaml:"docs_dir"`
 	SkillsDir string `yaml:"skills_dir"`
 }
 
+// RedisConfig Redis连接与RediSearch向量索引配置。
 type RedisConfig struct {
-	Addr              string  `yaml:"addr"`
-	Username          string  `yaml:"username"`
-	PasswordEnv       string  `yaml:"password_env"`
-	DB                int     `yaml:"db"`
-	KeyPrefix         string  `yaml:"key_prefix"`
-	Index             string  `yaml:"index"`
-	VectorField       string  `yaml:"vector_field"`
+	Addr        string `yaml:"addr"`
+	Username    string `yaml:"username"`
+	PasswordEnv string `yaml:"password_env"`
+	DB          int    `yaml:"db"`
+	KeyPrefix   string `yaml:"key_prefix"`
+	Index       string `yaml:"index"`
+	VectorField string `yaml:"vector_field"`
+	// 向量原始距离阈值（非分数），用于RediSearch预过滤。与RAGConfig.ScoreThreshold的相似度分数概念互补。
 	DistanceThreshold float64 `yaml:"distance_threshold"`
-	Dialect           int     `yaml:"dialect"`
+	// RediSearch查询方言版本，默认2。
+	Dialect int `yaml:"dialect"`
 }
 
+// SkillsConfig Skills技能系统配置。
 type SkillsConfig struct {
 	Enabled         bool `yaml:"enabled"`
 	MaxActiveSkills int  `yaml:"max_active_skills"`
 	AllowReload     bool `yaml:"allow_reload"`
 }
 
+// AgentConfig Agent运行模式与行为控制配置。
 type AgentConfig struct {
 	Mode          string `yaml:"mode"`
 	MaxSteps      int    `yaml:"max_steps"`

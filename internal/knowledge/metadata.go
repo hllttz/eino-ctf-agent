@@ -42,6 +42,7 @@ const (
 
 var ErrDocumentNotFound = errors.New("document not found")
 
+// MetadataRepo 文档元数据仓库，基于Redis Hash存储文档的元信息。
 type MetadataRepo struct {
 	client *goredis.Client
 	cfg    *config.Config
@@ -160,7 +161,11 @@ func MetadataInt(doc *schema.Document, key string) int {
 	case float64:
 		return int(value)
 	case string:
-		return parseInt(value)
+		n, err := parseInt(value)
+		if err != nil {
+			return 0
+		}
+		return n
 	default:
 		return 0
 	}
@@ -181,20 +186,20 @@ func documentHash(doc *model.Document) []any {
 }
 
 func documentFromHash(values map[string]string) *model.Document {
+	chunkCount, _ := parseInt(values[docFieldChunkCount])
 	return &model.Document{
 		ID:           values[docFieldID],
 		Filename:     values[docFieldFilename],
 		FileType:     values[docFieldFileType],
 		SourcePath:   values[docFieldSourcePath],
 		Status:       values[docFieldStatus],
-		ChunkCount:   parseInt(values[docFieldChunkCount]),
+		ChunkCount:   chunkCount,
 		ErrorMessage: values[docFieldErrorMessage],
 		CreatedAt:    values[docFieldCreatedAt],
 		UpdatedAt:    values[docFieldUpdatedAt],
 	}
 }
 
-func parseInt(value string) int {
-	i, _ := strconv.Atoi(value)
-	return i
+func parseInt(value string) (int, error) {
+	return strconv.Atoi(value)
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 )
 
+// Writer SSE事件流写入器，封装HTTP ResponseWriter的SSE格式输出。
 type Writer struct {
 	w http.ResponseWriter
 }

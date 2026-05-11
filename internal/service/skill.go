@@ -4,6 +4,7 @@ import (
 	"eino_ctf_agent/internal/skill"
 )
 
+// SkillService 技能服务，封装技能注册表的查询和重载操作。
 type SkillService struct {
 	registry *skill.Registry
 }

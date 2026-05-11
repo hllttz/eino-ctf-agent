@@ -20,11 +20,13 @@ import (
 	"eino_ctf_agent/internal/model"
 )
 
+// Service 知识库服务，管理文档上传、异步索引和删除的全生命周期。
 type Service struct {
 	cfg          *config.Config
 	redisClient  *goredis.Client
 	indexer      einoindexer.Indexer
 	documentRepo *MetadataRepo
+	// 并发索引控制信号量（缓冲通道容量2），限制同时执行embedding的文档数。
 	indexLimiter chan struct{}
 }
 

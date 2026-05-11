@@ -56,6 +56,15 @@ func RedisDocumentToSchema(ctx context.Context, raw goredis.Document) (*schema.D
 		return nil, fmt.Errorf("redis document %s missing %s field", raw.ID, RedisContentField)
 	}
 
+	chunkIndex, err := parseInt(raw.Fields[MetaChunkIndex])
+	if err != nil {
+		return nil, fmt.Errorf("redis document %s: invalid chunk_index: %w", raw.ID, err)
+	}
+	pageNumber, err := parseInt(raw.Fields[MetaPageNumber])
+	if err != nil {
+		return nil, fmt.Errorf("redis document %s: invalid page_number: %w", raw.ID, err)
+	}
+
 	doc := &schema.Document{
 		ID:      raw.ID,
 		Content: content,
@@ -63,9 +72,9 @@ func RedisDocumentToSchema(ctx context.Context, raw goredis.Document) (*schema.D
 			MetaDocumentID:  raw.Fields[MetaDocumentID],
 			MetaFilename:    raw.Fields[MetaFilename],
 			MetaFileType:    raw.Fields[MetaFileType],
-			MetaChunkIndex:  parseInt(raw.Fields[MetaChunkIndex]),
+			MetaChunkIndex:  chunkIndex,
 			MetaHeadingPath: raw.Fields[MetaHeadingPath],
-			MetaPageNumber:  parseInt(raw.Fields[MetaPageNumber]),
+			MetaPageNumber:  pageNumber,
 		},
 	}
 

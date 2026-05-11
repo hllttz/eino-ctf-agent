@@ -17,6 +17,7 @@ import (
 	"eino_ctf_agent/internal/router"
 	"eino_ctf_agent/internal/service"
 	"eino_ctf_agent/internal/skill"
+	"eino_ctf_agent/internal/tool"
 )
 
 func main() {
@@ -37,6 +38,11 @@ func main() {
 	chatModel, err := llm.NewChatModel(ctx, cfg)
 	if err != nil {
 		log.Fatalf("[FATAL] failed to create chat model: %v", err)
+	}
+
+	toolCallingModel, err := llm.NewToolCallingChatModel(ctx, cfg)
+	if err != nil {
+		log.Fatalf("[FATAL] failed to create tool-calling chat model: %v", err)
 	}
 
 	embedder, err := embedding.NewEmbedder(ctx, cfg)
@@ -71,8 +77,24 @@ func main() {
 	skillRouter := skill.NewRouter(skillRegistry, cfg.Skills.MaxActiveSkills)
 	skillService := service.NewSkillService(skillRegistry)
 
+	toolRegistry := tool.NewRegistry()
+	knowledgeSearchTool, err := tool.NewKnowledgeSearchTool(knowledgeRetriever, cfg.RAG.TopK, cfg.RAG.ScoreThreshold)
+	if err != nil {
+		log.Fatalf("[FATAL] failed to create knowledge_search tool: %v", err)
+	}
+	toolRegistry.Register("knowledge_search", knowledgeSearchTool)
+
+	skillReaderTool, err := tool.NewSkillReaderTool(skillRegistry)
+	if err != nil {
+		log.Fatalf("[FATAL] failed to create skill_reader tool: %v", err)
+	}
+	toolRegistry.Register("skill_reader", skillReaderTool)
+
 	ragService := service.NewRAGService(cfg, chatModel, knowledgeRetriever, skillRouter)
-	chatService := service.NewChatService(chatModel, ragService)
+	chatService := service.NewChatService(cfg, chatModel, toolCallingModel, ragService, skillRouter, toolRegistry)
+	if err := chatService.InitAgent(); err != nil {
+		log.Printf("[WARN] react agent not available: %v (agent.mode=%s)", err, cfg.Agent.Mode)
+	}
 
 	chatHandler := handler.NewChatHandler(chatService)
 	knowledgeHandler := handler.NewKnowledgeHandler(knowledgeService)

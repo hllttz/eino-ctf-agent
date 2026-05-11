@@ -11,6 +11,7 @@ import (
 	"eino_ctf_agent/internal/pkg/security"
 )
 
+// Loader 技能加载器，从文件系统目录读取和解析技能文件。
 type Loader struct {
 	dir string
 }

@@ -12,6 +12,7 @@ import (
 	"eino_ctf_agent/internal/service"
 )
 
+// ChatHandler 聊天HTTP处理器，处理同步和流式聊天请求。
 type ChatHandler struct {
 	chatService *service.ChatService
 }

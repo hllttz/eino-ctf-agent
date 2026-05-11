@@ -1,5 +1,6 @@
 package skill
 
+// Skill 技能定义，对应data/skills/目录下的Markdown技能文件。
 type Skill struct {
 	Name        string   `json:"name" yaml:"name"`
 	Title       string   `json:"title" yaml:"title"`

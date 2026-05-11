@@ -10,6 +10,7 @@ import (
 	"eino_ctf_agent/internal/service"
 )
 
+// SkillHandler 技能HTTP处理器，处理技能列表、详情和重载请求。
 type SkillHandler struct {
 	skillService *service.SkillService
 }

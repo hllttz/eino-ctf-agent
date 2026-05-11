@@ -9,6 +9,7 @@ const (
 	DocumentStatusFailed    = "failed"
 )
 
+// Document 文档元数据，记录上传文档的索引状态和基础信息。
 type Document struct {
 	ID           string `json:"id"`
 	Filename     string `json:"filename"`
