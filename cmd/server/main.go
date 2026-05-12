@@ -133,6 +133,50 @@ func main() {
 	}
 	toolRegistry.Register("encoding_decoder", encodingDecoderTool)
 
+	// Phase 6 IDA MCP 只读分析工具。
+	// endpoint 非法时记录 warning 并注册 disabled client，不阻止服务启动。
+	idaEndpoint := tool.EnvIDAEndpoint()
+	idaTimeout := tool.EnvIDATimeout()
+	var idaClient tool.IDAMCPClient
+	if realClient, err := tool.NewRealMCPClient(idaEndpoint, idaTimeout); err != nil {
+		log.Printf("[WARN] IDA MCP endpoint invalid (%s): %v — IDA tools will be unavailable", idaEndpoint, err)
+		idaClient = tool.NewDisabledMCPClient(err.Error())
+	} else {
+		idaClient = realClient
+		log.Printf("[INFO] IDA MCP client configured: endpoint=%s timeout=%ds", idaEndpoint, idaTimeout)
+	}
+	tool.SetIDAClient(idaClient)
+
+	idaStatusTool, err := tool.NewIDAStatusTool()
+	if err != nil {
+		log.Fatalf("[FATAL] failed to create ida_status tool: %v", err)
+	}
+	toolRegistry.Register("ida_status", idaStatusTool)
+
+	idaFunctionsTool, err := tool.NewIDAFunctionsTool()
+	if err != nil {
+		log.Fatalf("[FATAL] failed to create ida_functions tool: %v", err)
+	}
+	toolRegistry.Register("ida_functions", idaFunctionsTool)
+
+	idaDecompileTool, err := tool.NewIDADecompileTool()
+	if err != nil {
+		log.Fatalf("[FATAL] failed to create ida_decompile tool: %v", err)
+	}
+	toolRegistry.Register("ida_decompile", idaDecompileTool)
+
+	idaStringsTool, err := tool.NewIDAStringsTool()
+	if err != nil {
+		log.Fatalf("[FATAL] failed to create ida_strings tool: %v", err)
+	}
+	toolRegistry.Register("ida_strings", idaStringsTool)
+
+	idaXrefsTool, err := tool.NewIDAXrefsTool()
+	if err != nil {
+		log.Fatalf("[FATAL] failed to create ida_xrefs tool: %v", err)
+	}
+	toolRegistry.Register("ida_xrefs", idaXrefsTool)
+
 	// 组装服务：ragService 处理简单 RAG，chatService 按配置自动选 simple_rag 或 react 模式。
 	ragService := service.NewRAGService(cfg, chatModel, knowledgeRetriever, skillRouter)
 	chatService := service.NewChatService(cfg, chatModel, toolCallingModel, ragService, skillRouter, toolRegistry)
