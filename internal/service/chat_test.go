@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 
 	appmodel "eino_ctf_agent/internal/model"
@@ -59,5 +60,44 @@ func TestValidateChatRequest_Valid(t *testing.T) {
 	})
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestContextWithTraceID_Present(t *testing.T) {
+	ctx := ContextWithTraceID(context.Background(), "req-hdr-abc123")
+	got, ok := TraceIDFromContext(ctx)
+	if !ok {
+		t.Fatal("expected trace ID to be present in context")
+	}
+	if got != "req-hdr-abc123" {
+		t.Errorf("expected req-hdr-abc123, got %q", got)
+	}
+}
+
+func TestTraceIDFromContext_Missing(t *testing.T) {
+	_, ok := TraceIDFromContext(context.Background())
+	if ok {
+		t.Error("expected no trace ID in empty context")
+	}
+}
+
+func TestTraceID_HeaderFlow(t *testing.T) {
+	// 模拟 handler → service 流转：header 存在时透传，缺失时生成
+	ctx := ContextWithTraceID(context.Background(), "x-req-456")
+	id1, ok := TraceIDFromContext(ctx)
+	if !ok || id1 != "x-req-456" {
+		t.Fatalf("context trace ID mismatch: got=%q ok=%v", id1, ok)
+	}
+
+	// 缺失 header 时 newTraceID 生成
+	id2 := newTraceID()
+	if len(id2) != 16 {
+		t.Errorf("generated trace ID wrong length: %d", len(id2))
+	}
+
+	// 两次生成应不同
+	id3 := newTraceID()
+	if id2 == id3 {
+		t.Errorf("two generated trace IDs should differ")
 	}
 }

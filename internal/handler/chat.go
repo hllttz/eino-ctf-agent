@@ -31,7 +31,12 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.chatService.Chat(c.Request.Context(), &req)
+	ctx := c.Request.Context()
+	if traceID := c.Request.Header.Get("X-Request-ID"); traceID != "" {
+		ctx = service.ContextWithTraceID(ctx, traceID)
+	}
+
+	resp, err := h.chatService.Chat(ctx, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
 			Error:   "chat_error",
@@ -53,11 +58,16 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+	if traceID := c.Request.Header.Get("X-Request-ID"); traceID != "" {
+		ctx = service.ContextWithTraceID(ctx, traceID)
+	}
+
 	sse.SetHeaders(c.Writer)
 	c.Status(http.StatusOK)
 	writer := sse.NewWriter(c.Writer)
 
-	stream, err := h.chatService.Stream(c.Request.Context(), &req)
+	stream, err := h.chatService.Stream(ctx, &req)
 	if err != nil {
 		_ = writer.Event("error", model.ErrorResponse{Error: "chat_error", Message: err.Error()})
 		_ = writer.Event("done", gin.H{})

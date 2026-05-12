@@ -21,6 +21,19 @@ import (
 	"eino_ctf_agent/internal/tool"
 )
 
+type traceIDKey struct{}
+
+// ContextWithTraceID 将 traceID 注入 context，供 handler 传入 X-Request-ID。
+func ContextWithTraceID(ctx context.Context, traceID string) context.Context {
+	return context.WithValue(ctx, traceIDKey{}, traceID)
+}
+
+// TraceIDFromContext 从 context 中提取 traceID。返回空字符串表示不存在。
+func TraceIDFromContext(ctx context.Context) (string, bool) {
+	v, ok := ctx.Value(traceIDKey{}).(string)
+	return v, ok
+}
+
 // ChatService 聊天服务，编排LLM调用与可选的RAG/Agent链路。
 type ChatService struct {
 	cfg         *config.Config
@@ -66,7 +79,10 @@ func (s *ChatService) Chat(ctx context.Context, req *appmodel.ChatRequest) (*app
 	if err := validateChatRequest(req); err != nil {
 		return nil, err
 	}
-	traceID := newTraceID()
+	traceID, ok := TraceIDFromContext(ctx)
+	if !ok {
+		traceID = newTraceID()
+	}
 	log.Printf("[TRACE] %s Chat mode=%s messages=%d conversation=%q", traceID, s.cfg.Agent.Mode, len(req.Messages), req.ConversationID)
 	if s.cfg.Agent.Mode == "react" {
 		return s.reactChat(ctx, req, traceID)
@@ -88,7 +104,10 @@ func (s *ChatService) Stream(ctx context.Context, req *appmodel.ChatRequest) (*C
 	if err := validateChatRequest(req); err != nil {
 		return nil, err
 	}
-	traceID := newTraceID()
+	traceID, ok := TraceIDFromContext(ctx)
+	if !ok {
+		traceID = newTraceID()
+	}
 	log.Printf("[TRACE] %s Stream mode=%s messages=%d conversation=%q", traceID, s.cfg.Agent.Mode, len(req.Messages), req.ConversationID)
 	if s.cfg.Agent.Mode == "react" {
 		return s.reactStream(ctx, req, traceID)
