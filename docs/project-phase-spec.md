@@ -49,7 +49,7 @@ Go + Gin 后端
 | Phase 7 | Tool-Augmented Agent | ✅ 已完成 | `internal/tool/knowledge_search.go`, `internal/tool/registry.go`, `internal/service/chat.go` (react path) |
 | Phase 7.5 | ReAct Agent 增强 | ✅ 已完成 | `internal/service/chat.go` (react.NewAgent, streamToolCallChecker) |
 | Phase 8 | 前端完整整合 | ❌ 未完成 | `web/` 下 View 为占位符 |
-| Phase 9 | 日志、错误处理与测试 | 🔶 部分完成 | traceID, X-Request-ID 已实现；统一错误格式、完整测试覆盖未完成 |
+| Phase 9 | 日志、错误处理与测试 | 🔶 部分完成 | traceID/X-Request-ID 已实现；CORS 中间件已实现；日志/Recovery 中间件为 TODO 骨架（暂用 Gin 内置）；统一错误格式、完整测试覆盖未完成 |
 | Phase 10 | Docker 部署与项目文档 | ❌ 未完成 | — |
 
 ## 4. 已完成阶段规格
@@ -266,8 +266,13 @@ Go + Gin 后端
 ### Phase 9：日志、错误处理与测试
 
 - **原计划目标**：统一错误格式、request_id、核心测试、可观测性
-- **已实现**：traceID、X-Request-ID、conversation_id、Gin recovery 中间件、CORS 中间件
+- **已实现**：
+  - traceID、X-Request-ID、conversation_id（见 Agent Phase 1-4）
+  - `middleware/cors.go`：CORS 中间件已实现并接入
+  - `main.go` 使用 `gin.Logger()` / `gin.Recovery()`（Gin 内置）提供基础日志和 panic 恢复
 - **当前缺口**：
+  - 项目自有 `middleware/logger.go`：TODO 骨架（计划记录 request_id、耗时、状态码，LLM 日志脱敏）
+  - 项目自有 `middleware/recovery.go`：TODO 骨架（计划捕获 panic 并返回统一错误格式）
   - 统一错误响应格式（`internal/errors/errors.go` 为 TODO 骨架）
   - `internal/pkg/response/response.go` 为 TODO 骨架
   - 日志中禁止输出 API Key（未系统验证）
@@ -290,24 +295,26 @@ Agent 扩展阶段是在 plan.md Phase 7.5（ReAct Agent）完成后的能力延
 |------|------|--------|------|
 | Agent Phase 1-4 | ReAct Agent 主链路与可观测性 | 2 | ✅ 已完成 |
 | Agent Phase 5 | CTF 本地分析工具最小闭环 | 5 | ✅ 已完成 |
-| Agent Phase 6 | IDA MCP 只读二进制分析工具链 | 5 | ✅ 已完成 |
+| Agent Phase 6 | IDA MCP 只读二进制分析工具链 | 5 | 🔶 工具骨架完成，真实 SSE transport 未完成 |
 
-当前 Agent 共注册 **12 个工具**：
+默认合法 endpoint 下，Agent 共注册 **12 个工具**，按来源分布：
 
 ```
-knowledge_search    (Phase 7)
-skill_reader        (Phase 7)
-file_info           (Agent Phase 5)
-file_reader         (Agent Phase 5)
-command_executor    (Agent Phase 5)
-python_runner       (Agent Phase 5)
-encoding_decoder    (Agent Phase 5)
-ida_status          (Agent Phase 6)
-ida_functions       (Agent Phase 6)
-ida_decompile       (Agent Phase 6)
-ida_strings         (Agent Phase 6)
-ida_xrefs           (Agent Phase 6)
+knowledge_search    (Phase 7)           ← 真实可用
+skill_reader        (Phase 7)           ← 真实可用
+file_info           (Agent Phase 5)     ← 真实可用
+file_reader         (Agent Phase 5)     ← 真实可用
+command_executor    (Agent Phase 5)     ← 真实可用
+python_runner       (Agent Phase 5)     ← 真实可用
+encoding_decoder    (Agent Phase 5)     ← 真实可用
+ida_status          (Agent Phase 6)     ← 真实可用（探测 endpoint 是否可达）
+ida_functions       (Agent Phase 6)     ← 返回 transport pending（真实调用未实现）
+ida_decompile       (Agent Phase 6)     ← 返回 transport pending（真实调用未实现）
+ida_strings         (Agent Phase 6)     ← 返回 transport pending（真实调用未实现）
+ida_xrefs           (Agent Phase 6)     ← 返回 transport pending（真实调用未实现）
 ```
+
+> endpoint 非法时不注册 RealMCPClient，改用 DisabledMCPClient，各工具返回配置错误。
 
 ## 7. 当前架构边界
 
