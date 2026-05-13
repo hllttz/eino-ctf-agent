@@ -10,6 +10,7 @@ require (
 	github.com/cloudwego/eino-ext/components/retriever/redis v0.0.0-20260427010451-749e3706378b
 	github.com/gin-gonic/gin v1.12.0
 	github.com/joho/godotenv v1.5.1
+	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/redis/go-redis/v9 v9.10.0
 	gopkg.in/yaml.v3 v3.0.1
 )

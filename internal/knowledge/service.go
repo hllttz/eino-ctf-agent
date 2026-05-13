@@ -44,8 +44,8 @@ func (s *Service) UploadMarkdown(ctx context.Context, filename string, reader io
 	if s.indexer == nil || s.redisClient == nil {
 		return nil, fmt.Errorf("knowledge service is not fully initialized")
 	}
-	if !isMarkdownFilename(filename) {
-		return nil, fmt.Errorf("only markdown files are supported")
+	if !isAllowedFilename(filename) {
+		return nil, fmt.Errorf("unsupported file type: %s (allowed: .md, .markdown, .pdf)", filepath.Ext(filename))
 	}
 
 	content, err := io.ReadAll(io.LimitReader(reader, 20<<20))
@@ -53,28 +53,34 @@ func (s *Service) UploadMarkdown(ctx context.Context, filename string, reader io
 		return nil, fmt.Errorf("read upload: %w", err)
 	}
 	if strings.TrimSpace(string(content)) == "" {
-		return nil, fmt.Errorf("markdown file is empty")
+		return nil, fmt.Errorf("file is empty")
 	}
 
 	id, err := newID()
 	if err != nil {
 		return nil, err
 	}
-	markdownDir := filepath.Join(s.cfg.Storage.DocsDir, "markdown")
-	if err := os.MkdirAll(markdownDir, 0o755); err != nil {
-		return nil, fmt.Errorf("create markdown dir: %w", err)
+
+	fileType := "markdown"
+	if isPDFFilename(filename) {
+		fileType = "pdf"
+	}
+
+	storageDir := filepath.Join(s.cfg.Storage.DocsDir, fileType)
+	if err := os.MkdirAll(storageDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create %s dir: %w", fileType, err)
 	}
 
 	safeName := sanitizeFilename(filename)
-	sourcePath := filepath.Join(markdownDir, id+"_"+safeName)
+	sourcePath := filepath.Join(storageDir, id+"_"+safeName)
 	if err := os.WriteFile(sourcePath, content, 0o644); err != nil {
-		return nil, fmt.Errorf("save markdown file: %w", err)
+		return nil, fmt.Errorf("save file: %w", err)
 	}
 
 	doc := &model.Document{
 		ID:         id,
 		Filename:   filepath.Base(filename),
-		FileType:   "markdown",
+		FileType:   fileType,
 		SourcePath: sourcePath,
 		Status:     model.DocumentStatusPending,
 	}
@@ -82,7 +88,11 @@ func (s *Service) UploadMarkdown(ctx context.Context, filename string, reader io
 		return nil, err
 	}
 
-	s.enqueueMarkdownIndex(doc, string(content))
+	if fileType == "pdf" {
+		s.enqueuePDFIndex(doc, string(content))
+	} else {
+		s.enqueueMarkdownIndex(doc, string(content))
+	}
 	return doc, nil
 }
 
@@ -179,6 +189,95 @@ func (s *Service) indexMarkdown(ctx context.Context, doc *model.Document, conten
 	return s.documentRepo.UpdateStatus(ctx, doc.ID, model.DocumentStatusIndexed, "")
 }
 
+// enqueuePDFIndex 将 PDF 文档放入后台索引队列。
+func (s *Service) enqueuePDFIndex(doc *model.Document, content string) {
+	go func() {
+		s.indexLimiter <- struct{}{}
+		defer func() { <-s.indexLimiter }()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+
+		if err := s.indexPDF(ctx, doc, content); err != nil {
+			failMsg := err.Error()
+			_ = s.documentRepo.UpdateStatus(ctx, doc.ID, model.DocumentStatusFailed, failMsg)
+		}
+	}()
+}
+
+// indexPDF 将 PDF 文本按页解析、复用现有 splitter 切块、embedding → Redis index。
+// 每页文本先作为独立单元交给 TextSplitter，切出的 chunk 继承 page_number metadata。
+func (s *Service) indexPDF(ctx context.Context, doc *model.Document, content string) error {
+	if err := s.documentRepo.UpdateStatus(ctx, doc.ID, model.DocumentStatusParsing, ""); err != nil {
+		return err
+	}
+	pages, err := ParsePDF(strings.NewReader(content))
+	if err != nil {
+		return err
+	}
+
+	if err := s.documentRepo.UpdateStatus(ctx, doc.ID, model.DocumentStatusChunking, ""); err != nil {
+		return err
+	}
+	textSplitter, err := NewTextSplitter(s.cfg.RAG.ChunkSize, s.cfg.RAG.ChunkOverlap)
+	if err != nil {
+		return err
+	}
+
+	// 每页文本作为独立 MarkdownBlock 交给 splitter，保留 page_number。
+	// page_number 通过 HeadingPath 字段传递（"Page N"），复用现有 splitter/chunk 流程。
+	// 后续可改为显式 metadata 传递，避免解析 HeadingPath。
+	var allChunks []TextChunk
+	for _, page := range pages {
+		pageChunks := textSplitter.splitText("", page.Text)
+		for i := range pageChunks {
+			pageChunks[i].HeadingPath = fmt.Sprintf("Page %d", page.PageNumber)
+		}
+		allChunks = append(allChunks, pageChunks...)
+	}
+	if len(allChunks) == 0 {
+		return fmt.Errorf("pdf file produced no chunks")
+	}
+
+	if err := s.documentRepo.UpdateStatus(ctx, doc.ID, model.DocumentStatusEmbedding, ""); err != nil {
+		return err
+	}
+	if err := s.deleteDocumentChunks(ctx, doc.ID, doc.ChunkCount); err != nil {
+		return err
+	}
+
+	docs := make([]*schema.Document, 0, len(allChunks))
+	for i, chunk := range allChunks {
+		chunkID := fmt.Sprintf("%s:%d", doc.ID, i)
+		pageNum := 0
+		// 从 HeadingPath "Page N" 中提取页码
+		if n, parseErr := fmt.Sscanf(chunk.HeadingPath, "Page %d", &pageNum); n != 1 || parseErr != nil {
+			pageNum = 0
+		}
+		docs = append(docs, &schema.Document{
+			ID:      chunkID,
+			Content: chunk.Content,
+			MetaData: map[string]any{
+				MetaDocumentID:  doc.ID,
+				MetaFilename:    doc.Filename,
+				MetaFileType:    doc.FileType,
+				MetaChunkIndex:  i,
+				MetaHeadingPath: chunk.HeadingPath,
+				MetaPageNumber:  pageNum,
+				MetaSourcePath:  doc.SourcePath,
+			},
+		})
+	}
+
+	if _, err := s.indexer.Store(ctx, docs); err != nil {
+		return err
+	}
+	if err := s.documentRepo.UpdateChunkCount(ctx, doc.ID, len(docs)); err != nil {
+		return err
+	}
+	return s.documentRepo.UpdateStatus(ctx, doc.ID, model.DocumentStatusIndexed, "")
+}
+
 func (s *Service) deleteDocumentChunks(ctx context.Context, docID string, chunkCount int) error {
 	keys := make(map[string]struct{}, chunkCount)
 	for i := 0; i < chunkCount; i++ {
@@ -206,9 +305,15 @@ func (s *Service) deleteDocumentChunks(ctx context.Context, docID string, chunkC
 	return nil
 }
 
-func isMarkdownFilename(filename string) bool {
+// isAllowedFilename 检查上传文件是否为支持的类型（Markdown 或 PDF）。
+func isAllowedFilename(filename string) bool {
 	ext := strings.ToLower(filepath.Ext(filename))
-	return ext == ".md" || ext == ".markdown"
+	return ext == ".md" || ext == ".markdown" || ext == ".pdf"
+}
+
+func isPDFFilename(filename string) bool {
+	ext := strings.ToLower(filepath.Ext(filename))
+	return ext == ".pdf"
 }
 
 var unsafeFilenameChars = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
