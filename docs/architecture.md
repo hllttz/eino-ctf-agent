@@ -1,101 +1,123 @@
-# 项目结构说明
+# 架构说明
 
-当前后端已从 SQLite MVP 收敛为 Redis + Eino 原生组件：
+## 总体调用链路
 
-- Embedding 使用 Eino `embedding.Embedder`。
-- 知识库写入使用 `eino-ext/components/indexer/redis`。
-- 知识库检索使用 `eino-ext/components/retriever/redis`。
-- 文档元数据也存入 Redis Hash/Set。
-- Markdown 解析、切块、Redis 元数据、Indexer/Retriever 组装统一放在 `internal/knowledge`，避免 `internal` 下出现过多碎片包。
+```
+HTTP Request
+  → Gin Router
+  → Handler（请求解析/响应写入，薄层）
+  → Service（业务编排） ← Config（配置）
+      ├─ Simple RAG：RAGService → Retriever → Skill Router → Prompt → ChatModel
+      └─ ReAct Agent：ChatService → react.NewAgent(ToolCallingChatModel + Tools)
+           Agent 循环：reasoning → tool_call → observation → ... → final_answer
+  → Redis（向量检索 + 文档元数据）
+```
 
-> 注意：向量检索依赖 Redis Search/Vector Search，普通 Redis Server 不包含 `FT.CREATE`/`FT.SEARCH`。本地建议使用 Redis Stack 或带 RediSearch 模块的 Redis。
+## 核心启动链路（cmd/server/main.go）
+
+1. 加载 `configs/config.yaml` + `.env`
+2. 创建 Eino ChatModel（DeepSeek 或 Mock）
+3. 创建 Eino ToolCallingChatModel（Agent 独占，与普通 ChatModel 分离）
+4. 创建 Eino Embedder（Qwen DashScope 或 Mock）
+5. 连接 Redis Stack，Ping + `EnsureVectorIndex`（RediSearch HNSW）
+6. 创建 Eino Redis Indexer / Retriever → knowledge.Service
+7. 加载 `data/skills/` → skill.Registry → skill.Router
+8. 注册 13 个 Agent 工具到 tool.Registry
+9. 组装 RAGService → ChatService → Handler → Gin Router → 启动
 
 ## 目录结构
 
-```text
+```
 eino_ctf_agent/
-├── cmd/server/main.go                 # 程序入口，组装配置、模型、Redis、HTTP 路由
-├── configs/                           # 配置文件
-├── data/                              # 上传文档与 Skills
-├── docs/                              # 项目文档
+├── cmd/server/main.go           # 入口：组装全链路
+├── configs/                     # YAML 配置文件
+├── data/
+│   ├── docs/                    # 上传的文档原文件
+│   └── skills/                  # Skills .md 文件
+├── docs/                        # 项目文档
 ├── internal/
-│   ├── agent/                         # Agent Runner
-│   ├── config/                        # 配置加载和默认值
-│   ├── embedding/                     # Eino Embedder 工厂
-│   ├── handler/                       # HTTP Handler
-│   ├── knowledge/                     # 知识库核心：Markdown、Redis 元数据、Eino Redis Indexer/Retriever
-│   ├── llm/                           # Eino ChatModel 工厂
-│   ├── middleware/                    # CORS / Logger / Recovery
-│   ├── model/                         # HTTP 请求/响应模型
-│   ├── prompt/                        # RAG / Agent / Skill Prompt
-│   ├── router/                        # Gin 路由注册
-│   ├── service/                       # Chat / RAG / Skill 应用服务
-│   ├── skill/                         # Skill 加载、注册、路由
-│   ├── tool/                          # Eino Tool 扩展点
-│   └── pkg/                           # SSE、响应、安全等内部工具
-└── web/                               # Vue 3 + Vite 前端
+│   ├── agent/                   # TODO 骨架：规划中 Agent Runner（当前未使用）
+│   ├── config/                  # YAML 加载 + 默认值 + 校验
+│   ├── embedding/               # Embedder 工厂（qwen / mock）
+│   ├── errors/                  # 业务错误码 + AppError 结构体
+│   ├── handler/                 # HTTP Handler（薄层）
+│   ├── knowledge/               # 知识库：解析/切块/Redis/Indexer/Retriever
+│   ├── llm/                     # ChatModel 工厂（deepseek / mock）
+│   ├── middleware/               # CORS / Logger / Recovery
+│   ├── model/                   # 请求/响应模型 + 消息工具函数
+│   ├── pkg/
+│   │   ├── response/            # 统一响应 helper（OK/Error/...）
+│   │   ├── security/            # Skill 名校验、安全路径拼接
+│   │   └── sse/                 # SSE Writer
+│   ├── prompt/                  # RAG/Agent System Prompt 构建
+│   ├── router/                  # Gin 路由注册
+│   ├── service/                 # ChatService / RAGService / SkillService
+│   ├── skill/                   # Skill model / loader / registry / router
+│   └── tool/                    # Agent 工具实现（13 个工具）
+└── web/                         # Vue 3 前端（当前为占位状态）
 ```
 
-## 核心链路
+## 关键设计
 
-### 文档入库
+### ReAct Agent 主逻辑位置
 
-```text
-HTTP Upload
-  → knowledge.Service.UploadMarkdown
-  → 保存原始 Markdown 到 data/docs/markdown
-  → Redis 记录 document 元数据，状态 pending
-  → 后台 goroutine 异步解析和切块
-  → Eino Redis Indexer 生成 embedding 并写入 Redis Hash
-  → Redis document 状态更新为 indexed/failed
+当前 ReAct Agent 的核心逻辑在 **`internal/service/chat.go`** 中：
+
+- `reactChat()` — 同步 React Agent 调用
+- `reactStream()` — 流式 React Agent 调用
+- `getReactAgent()` — 惰性初始化 Eino React Agent（sync.Once）
+- `streamToolCallChecker()` — DeepSeek thinking 模式工具调用检测
+
+**`internal/agent/` 包当前是 TODO 骨架**，5 个文件均只有注释：
+- `runner.go` — "TODO Phase 7: Agent Runner 接口定义"
+- `simple_rag_runner.go` — "TODO Phase 5: Simple RAG Runner"
+- `tool_agent_runner.go` — "TODO Phase 7: Tool-Augmented Agent Runner"
+- `react_runner.go` — "TODO Phase 7.5: ReAct Agent Runner"
+- `trace.go` — "TODO Phase 7.5: Agent 调用追踪"
+
+后续重构方向是将 `service/chat.go` 中的 ReAct 逻辑迁入 `internal/agent/`，但当前不做。
+
+### 双模式路由
+
+`agent.mode` 配置控制聊天行为：
+
+- `simple_rag`：检索 → Skill 匹配 → Prompt 构建 → ChatModel 生成（不走 Agent）
+- `react`：Eino ReAct Agent 多步推理 + 工具调用
+
+两个模式共用同一套 Tool Registry 和 Skill Router。
+
+### Redis Key 约定
+
+默认 key prefix 为 `eino_ctf_agent:`：
+
+```
+eino_ctf_agent:documents               # 文档 ID 集合（Set）
+eino_ctf_agent:doc:<id>                # 文档元数据（Hash）
+eino_ctf_agent:chunk:<doc_id>:<n>      # Chunk 内容 + 向量（Hash）
+idx:eino_ctf_agent_chunks              # RediSearch HNSW 向量索引
 ```
 
-### RAG 检索
+### 文档入库链路
 
-```text
-ChatRequest
-  → service.RAGService
-  → Eino Redis Retriever
-  → schema.Document + metadata
-  → Skill Router 注入匹配到的 Skill
-  → BuildRAGSystemPrompt
-  → Eino ChatModel Generate/Stream
+```
+HTTP Upload → 保存原文件 → Redis 元数据(pending)
+→ 后台 goroutine（最多2并发）
+  → 解析(Markdown/PDF) → 切块(chunk_size=512, overlap=64)
+  → Embedder 生成向量 → Eino Redis Indexer 写入
+  → 状态更新为 indexed / failed
 ```
 
-## Redis Key 约定
+### 安全边界（工具执行）
 
-默认 `redis.key_prefix` 为 `eino_ctf_agent:`：
+- 所有路径限制在工作目录内（`resolvePath` + `isPathSafe`）
+- 禁止绝对路径和 `../` 穿越
+- 命令执行使用 27 个 allowlist
+- Python 执行：最小环境变量 + timeout（默认5s，最大20s）+ 输出截断（100KB）
+- IDA MCP endpoint 只允许 `127.0.0.1` 或 `localhost`
 
-```text
-eino_ctf_agent:documents               # 文档 ID 集合
-eino_ctf_agent:doc:<document_id>       # 文档元数据 Hash
-eino_ctf_agent:chunk:<document_id>:<n> # chunk 内容、metadata、embedding Hash
-idx:eino_ctf_agent_chunks              # RediSearch 向量索引
-```
+### 设计原则
 
-## 配置重点
-
-```yaml
-storage:
-  docs_dir: ./data/docs
-  skills_dir: ./data/skills
-
-redis:
-  addr: 127.0.0.1:6379
-  username: ""
-  password_env: REDIS_PASSWORD
-  db: 0
-  key_prefix: eino_ctf_agent:
-  index: idx:eino_ctf_agent_chunks
-  vector_field: vector_content
-  distance_threshold: 0
-  dialect: 2
-```
-
-## 设计原则
-
-1. 已有 Eino/eino-ext 组件优先，不重复造轮子。
-2. `service` 层只表达应用语义，不实现 embedding、indexer、retriever 这类框架已有抽象。
-3. 知识库相关实现集中在 `internal/knowledge`，避免 `parser/splitter/store/vectorstore/retriever` 分散扩张。
-4. Redis 是当前唯一知识库存储；后续如接入 Milvus、Qdrant、Elasticsearch，也应优先使用对应 Eino 组件或薄适配层。
-
+1. 优先使用 Eino/eino-ext 已有组件，不重复造轮子
+2. Handler 保持薄层，业务逻辑在 Service / Tool 层
+3. 知识库实现集中在 `internal/knowledge`，不分散为 parser/splitter/store 碎片包
+4. Redis 是当前唯一存储，后续扩展优先使用 Eino 组件或薄适配层
