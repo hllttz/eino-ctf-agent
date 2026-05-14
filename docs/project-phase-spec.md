@@ -18,18 +18,20 @@
 ```
 Go + Gin 后端
 ├── 配置管理 (config.yaml + .env)
-├── ChatModel (DeepSeek V4 Flash，OpenAI 兼容适配)
-├── Embedder (Qwen text-embedding-v4，DashScope)
+├── ChatModel (DeepSeek V4 Pro / Mock，OpenAI 兼容适配)
+├── Embedder (Qwen text-embedding-v4 / Mock，DashScope)
 ├── Redis 向量存储 (RediSearch HNSW)
-├── 知识库 (Markdown 解析/切块/向量化/检索)
+├── 知识库 (Markdown/PDF 解析/切块/向量化/检索)
 ├── Skills 系统 (YAML front-matter + trigger 匹配)
 ├── 普通聊天 + SSE 流式输出
 ├── Simple RAG 模式 (检索 → prompt → 生成)
-├── ReAct Agent 模式 (Eino React Agent + 12 个工具)
-├── 可观测性 (traceID / X-Request-ID / conversation_id)
-├── CTF 本地分析工具链 (5 个工具)
-├── IDA MCP 只读分析工具骨架 (5 个工具，接口抽象)
-└── Vue 3 前端 (聊天/知识库/Skills 占位)
+├── ReAct Agent 模式 (Eino React Agent + 13 个工具)
+├── 可观测性 (traceID / X-Request-ID / conversation_id / 自定义 Logger/Recovery)
+├── CTF 本地分析工具链 (8 个工具)
+├── IDA MCP 只读分析工具 (6 个工具，SSE transport 已实现)
+├── Mock LLM / Mock Embedder (provider: mock)
+├── Vue 3 前端 (聊天/知识库/Skills 占位)
+└── internal/agent 包 (TODO 骨架，ReAct 逻辑在 service/chat.go)
 ```
 
 ## 3. 原始 Phase 0-10 状态表
@@ -42,14 +44,14 @@ Go + Gin 后端
 | Phase 2.5 | 最小聊天前端 | ✅ 已完成 | `web/src/views/ChatView.vue`, `web/src/api/chat.ts` |
 | Phase 3 | Qwen Embedding 接入 | ✅ 已完成 | `internal/embedding/qwen.go`, `internal/embedding/factory.go` |
 | Phase 4A | Markdown 知识库入库 | ✅ 已完成 | `internal/knowledge/` (markdown.go, redis.go, components.go, service.go, metadata.go) |
-| Phase 4B | PDF 知识库入库 | ❌ 未完成 | — |
+| Phase 4B | PDF 知识库入库 | ✅ 已完成 | `internal/knowledge/pdf.go`, `internal/knowledge/service.go`（enqueuePDFIndex/indexPDF） |
 | Phase 5 | Simple RAG Chain | ✅ 已完成 | `internal/service/rag.go`, `internal/prompt/rag_prompt.go` |
 | Phase 5.5 | 知识库管理前端 | ❌ 未完成 | 前端 Store 已定义，View 为占位符 |
 | Phase 6 | Skills 读取与路由 | ✅ 已完成 | `internal/skill/` (model.go, loader.go, registry.go, router.go), `internal/tool/skill_reader.go` |
 | Phase 7 | Tool-Augmented Agent | ✅ 已完成 | `internal/tool/knowledge_search.go`, `internal/tool/registry.go`, `internal/service/chat.go` (react path) |
 | Phase 7.5 | ReAct Agent 增强 | ✅ 已完成 | `internal/service/chat.go` (react.NewAgent, streamToolCallChecker) |
 | Phase 8 | 前端完整整合 | ❌ 未完成 | `web/` 下 View 为占位符 |
-| Phase 9 | 日志、错误处理与测试 | 🔶 部分完成 | traceID/X-Request-ID 已实现；CORS 中间件已实现；日志/Recovery 中间件为 TODO 骨架（暂用 Gin 内置）；统一错误格式、完整测试覆盖未完成 |
+| Phase 9 | 日志、错误处理与测试 | 🔶 已实现，部分接入 | traceID/X-Request-ID 已实现；错误码 + 统一响应 helper 已实现；自定义 Logger/Recovery 中间件已实现并接入 main.go；handler 层渐进迁移中（skill.go 已完成） |
 | Phase 10 | Docker 部署与项目文档 | ❌ 未完成 | — |
 
 ## 4. 已完成阶段规格
@@ -223,31 +225,35 @@ Go + Gin 后端
 - **验收方式**：43 个单元测试覆盖安全边界、输出截断、路径防逃逸、命令白名单、tar/unzip 限制
 - **遗留风险**：command_executor 中 tar/unzip 列表模式校验依赖 flag 字符串匹配；python_runner 无 OS 级网络隔离
 
-### Agent Phase 6：IDA MCP 只读二进制分析工具链
+### Agent Phase 6：IDA MCP 只读二进制分析工具链 ✅ 已完成
 
 - **目标**：让 Agent 在遇到二进制文件时可以结合 IDA MCP 做初步逆向分析
 - **实现范围**：
   - `IDAMCPClient` 接口抽象（工具层不依赖传输层）
-  - `RealMCPClient`：endpoint 安全校验 + `Status()` 真实探测 + 其余方法返回 transport pending
+  - `RealMCPClient`：endpoint 安全校验 + 完整 SSE transport 实现（GET SSE → endpoint event → POST JSON-RPC → 读 SSE response）
   - `MockMCPClient`：测试用，所有方法返回预设数据
   - `DisabledMCPClient`：配置异常时使用，不阻止服务启动
-  - 5 个工具：`ida_status`（真实探测）、`ida_functions`、`ida_decompile`、`ida_strings`、`ida_xrefs`
+  - 6 个工具：`ida_status`、`ida_functions`、`ida_decompile`、`ida_strings`、`ida_xrefs`、`ida_disasm`
   - endpoint 只允许 `127.0.0.1` 或 `localhost`（IPv4 only）
-  - `Status()` 收到响应头即关闭 body，不读取完整 SSE stream
-- **关键文件**：`internal/tool/ida_mcp_client.go`, `internal/tool/ida_mcp_tools.go`, `internal/tool/ida_mcp_test.go`
-- **关键流程**：main.go 读环境变量 → NewRealMCPClient（校验 endpoint）→ SetIDAClient → 注册 5 个工具 → Agent 调用 ida_status → 按需调用其他 ida_* 工具
-- **不包含**：完整 MCP SSE session 管理、真实 IDA 反编译/函数列表/交叉引用调用、`::1` IPv6、自动重连
-- **验收方式**：22 个单元测试覆盖 endpoint 校验、Status 探测（不读 SSE body）、Mock 工具正常返回、输出截断、Registry 注册
-- **遗留风险**：transport pending 错误需要 Agent 正确回退；Status 探测精度（收到响应头即认为可达）
+  - SSE transport 含 fallback 机制（wsl-conn-fix.patch 兼容性问题处理）
+- **关键文件**：`internal/tool/ida_mcp_client.go`, `internal/tool/ida_mcp_tools.go`, `internal/tool/ida_mcp_sse.go`, `internal/tool/ida_mcp_test.go`
+- **关键流程**：main.go 读环境变量 → NewRealMCPClient（校验 endpoint）→ SetIDAClient → 注册 6 个工具 → Agent 调用 ida_status → 按需调用其他 ida_* 工具
+- **不包含**：`::1` IPv6、自动重连
+- **验收方式**：单元测试覆盖 endpoint 校验、Status 探测、Mock 工具正常返回、输出截断、Registry 注册
+- **遗留风险**：SSE stream 错误处理依赖 IDA MCP 服务端行为
 
 ## 5. 未完成或部分完成阶段
 
-### Phase 4B：PDF 知识库入库
+### Phase 4B：PDF 知识库入库 ✅ 已完成
 
 - **原计划目标**：支持文本型 PDF 上传、解析、切分、向量化
-- **当前缺口**：未实现 PDF parser；上传接口尚未允许 .pdf
-- **建议后续实现**：选择稳定 PDF 文本提取库（如 ledongthuc/pdf），按页提取，保留 page_number 元数据
-- **优先级**：P1（文本型 PDF 是 CTF writeup 常见格式）
+- **实现范围**：
+  - 使用 `ledongthuc/pdf` 库提取 PDF 文本
+  - 按页提取文本，保留 `page_number` 元数据
+  - `POST /api/knowledge/upload` 允许 `.pdf` 文件
+  - 异步索引（`enqueuePDFIndex` / `indexPDF`）
+  - 扫描版或无法提取文本的 PDF 标记为 `failed`
+- **关键文件**：`internal/knowledge/pdf.go`, `internal/knowledge/service.go`
 
 ### Phase 5.5：知识库管理前端
 
@@ -263,22 +269,22 @@ Go + Gin 后端
 - **建议后续实现**：ChatView 流式渲染 → KnowledgeView 上传/列表 → SkillsView 列表/详情 → CitationPanel → ToolCallPanel
 - **优先级**：P2（后端能力已就绪，前端逐个页面推进）
 
-### Phase 9：日志、错误处理与测试
+### Phase 9：日志、错误处理与测试 🔶 已实现，部分接入
 
 - **原计划目标**：统一错误格式、request_id、核心测试、可观测性
 - **已实现**：
   - traceID、X-Request-ID、conversation_id（见 Agent Phase 1-4）
   - `middleware/cors.go`：CORS 中间件已实现并接入
-  - `main.go` 使用 `gin.Logger()` / `gin.Recovery()`（Gin 内置）提供基础日志和 panic 恢复
+  - `internal/errors/errors.go`：13 个业务错误码 + AppError 结构体
+  - `internal/pkg/response/response.go`：OK/Created/NoContent/Error/ErrorRaw helpers
+  - `middleware/logger.go`：traceID + API Key 脱敏 + 结构化日志
+  - `middleware/recovery.go`：panic 捕获 + 统一错误响应格式
+  - `main.go`：已切换为 `middleware.Logger()` / `middleware.Recovery()`（替换 Gin 内置）
+  - Mock LLM / Mock Embedder 开发模式（`llm/mock.go` + `embedding/mock.go`）
 - **当前缺口**：
-  - 项目自有 `middleware/logger.go`：TODO 骨架（计划记录 request_id、耗时、状态码，LLM 日志脱敏）
-  - 项目自有 `middleware/recovery.go`：TODO 骨架（计划捕获 panic 并返回统一错误格式）
-  - 统一错误响应格式（`internal/errors/errors.go` 为 TODO 骨架）
-  - `internal/pkg/response/response.go` 为 TODO 骨架
-  - 日志中禁止输出 API Key（未系统验证）
-  - Mock LLM / Mock Embedder 开发模式
-  - handler 集成测试
-- **优先级**：P0（安全与可用性基础）
+  - handler 层仅 `skill.go` 已接入 `pkg/response`，其余 handler 仍使用 `model.ErrorResponse`
+  - handler 集成测试未编写
+- **优先级**：P1（基础已就绪，渐进迁移即可）
 
 ### Phase 10：Docker 部署与项目文档
 
@@ -295,9 +301,9 @@ Agent 扩展阶段是在 plan.md Phase 7.5（ReAct Agent）完成后的能力延
 |------|------|--------|------|
 | Agent Phase 1-4 | ReAct Agent 主链路与可观测性 | 2 | ✅ 已完成 |
 | Agent Phase 5 | CTF 本地分析工具最小闭环 | 5 | ✅ 已完成 |
-| Agent Phase 6 | IDA MCP 只读二进制分析工具链 | 5 | 🔶 工具骨架完成，真实 SSE transport 未完成 |
+| Agent Phase 6 | IDA MCP 只读二进制分析工具链 | 6 | ✅ 已完成（含 SSE transport + ida_disasm） |
 
-默认合法 endpoint 下，Agent 共注册 **12 个工具**，按来源分布：
+默认合法 endpoint 下，Agent 共注册 **13 个工具**，按来源分布：
 
 ```
 knowledge_search    (Phase 7)           ← 真实可用
@@ -307,14 +313,19 @@ file_reader         (Agent Phase 5)     ← 真实可用
 command_executor    (Agent Phase 5)     ← 真实可用
 python_runner       (Agent Phase 5)     ← 真实可用
 encoding_decoder    (Agent Phase 5)     ← 真实可用
+crypto_helper       (Phase 7)           ← 真实可用
+remote_interactor   (Phase 8)           ← 真实可用
+archive_tool        (Phase 9)           ← 真实可用
 ida_status          (Agent Phase 6)     ← 真实可用（探测 endpoint 是否可达）
-ida_functions       (Agent Phase 6)     ← 返回 transport pending（真实调用未实现）
-ida_decompile       (Agent Phase 6)     ← 返回 transport pending（真实调用未实现）
-ida_strings         (Agent Phase 6)     ← 返回 transport pending（真实调用未实现）
-ida_xrefs           (Agent Phase 6)     ← 返回 transport pending（真实调用未实现）
+ida_functions       (Agent Phase 6)     ← 真实可用（SSE transport）
+ida_decompile       (Agent Phase 6)     ← 真实可用（SSE transport）
+ida_strings         (Agent Phase 6)     ← 真实可用（SSE transport）
+ida_xrefs           (Agent Phase 6)     ← 真实可用（SSE transport）
+ida_disasm          (Agent Phase 6)     ← 真实可用（SSE transport）
 ```
 
 > endpoint 非法时不注册 RealMCPClient，改用 DisabledMCPClient，各工具返回配置错误。
+> 注意：当前 main.go 注册了全部 13 个工具，但 Agent Phase 6 文档标注 6 个 IDA 工具。
 
 ## 7. 当前架构边界
 
@@ -348,22 +359,21 @@ ida_xrefs           (Agent Phase 6)     ← 返回 transport pending（真实调
 
 ### P0：必须先修
 
-1. **统一错误响应格式**：实现 `internal/errors/errors.go` + `internal/pkg/response/response.go`
-2. **配置语义歧义**：`applyDefaults()` 对 `== 0` 的 Temperature/ScoreThreshold 覆盖问题
+1. ~~**统一错误响应格式**：实现 `internal/errors/errors.go` + `internal/pkg/response/response.go`~~ ✅ 已完成（2026-05-14）
+2. **配置语义歧义**：`applyDefaults()` 对 `== 0` 的 Temperature/ScoreThreshold 覆盖问题（已知设计选择，暂不修改）
 
 ### P1：下一阶段建议
 
-1. **IDA MCP SSE transport 完整实现**：当前 transport pending，需要 GET SSE → endpoint event → POST JSON-RPC → 读 SSE response
-2. **会话持久化**：基于 conversation_id 将 Eino state.Messages 持久化到 Redis
-3. **Agent trace 持久化**：记录 reasoning → tool call → observation → answer 调用链
-4. **PDF 知识库入库** (Phase 4B)
+1. **会话持久化**：基于 conversation_id 将 Eino state.Messages 持久化到 Redis
+2. **Agent trace 持久化**：记录 reasoning → tool call → observation → answer 调用链
+3. **Handler 层渐进迁移**：将 `chat.go`、`knowledge.go` 的错误响应迁移到 `pkg/response`
 
 ### P2：之后可以做
 
 1. **前端完整整合** (Phase 5.5 + Phase 8)：ChatView 流式、KnowledgeView 上传/列表、SkillsView、citation/tool_call 展示
-2. **Docker 部署** (Phase 10)：docker-compose up 一键启动
-3. **Mock LLM/Embedder**：不依赖外部 API 的本地开发模式
-4. **混合检索**：向量 + BM25 + rerank
+2. **Docker 部署** (Phase 10)：完善 Dockerfile + README 快速开始指南
+3. **混合检索**：向量 + BM25 + rerank
+4. **Agent 包重构**：将 `service/chat.go` 中的 ReAct 逻辑迁移到 `internal/agent/`
 
 ### P3：暂不建议
 
@@ -390,6 +400,7 @@ go test ./...
 
 ---
 
-> 最后更新：2026-05-13  
-> 文档版本：v1.0  
+> 最后更新：2026-05-14  
+> 文档版本：v1.1  
+> 本次更新：工程收敛 — 中间件接入、Mock 实现、文档同步、docker-compose/Makefile  
 > 下次更新触发：下一阶段完成后或架构变更时

@@ -12,7 +12,7 @@
 - RAG 服务只依赖 Eino `retriever.Retriever` 接口。
 - Skill 注入已接入 RAG Prompt，流式响应会返回命中的 Skill。
 
-## P0：Redis Stack / RediSearch 本地开发环境
+## P0：Redis Stack / RediSearch 本地开发环境 ✅ 已完成
 
 ### 目标
 
@@ -34,6 +34,11 @@
 - 新机器按文档可一次启动 Redis Stack。
 - `go run ./cmd/server` 可以自动创建向量索引。
 - 普通 Redis 缺少 RediSearch 时错误信息清晰。
+
+### 实现记录（2026-05-14）
+
+- ✅ 已新增 `docker-compose.yml`（Redis Stack + RedisInsight，端口 6379/8001）
+- ✅ 已新增 `Makefile`（含 `redis-up` / `redis-down` 命令）
 
 ## P0：Eino Graph 化 RAG 主链路
 
@@ -58,7 +63,7 @@
 - Retriever / ChatModel callback 可以被 Eino trace 捕获。
 - `service` 层只负责调用 Graph，不再手写主流程细节。
 
-## P0：Mock LLM / Mock Embedder 开发模式
+## P0：Mock LLM / Mock Embedder 开发模式 ✅ 已完成
 
 ### 目标
 
@@ -82,6 +87,12 @@
 - `go test ./...` 不依赖外部网络。
 - 上传文档、检索、聊天链路可以在 mock 模式跑通。
 
+### 实现记录（2026-05-14）
+
+- ✅ `internal/llm/mock.go`：MockChatModel 实现 BaseChatModel + ToolCallingChatModel
+- ✅ `internal/embedding/mock.go`：MockEmbedder 使用 FNV-1a 哈希生成确定性向量
+- ✅ 工厂函数已接入 `mock` provider
+
 ## P1：文档去重与重新索引
 
 ### 目标
@@ -102,7 +113,7 @@
 - reindex 后 `chunk_count` 和 Redis chunk keys 更新正确。
 - reindex 失败时文档状态为 `failed`，错误可见。
 
-## P1：PDF 文本型文件入库
+## P1：PDF 文本型文件入库 ✅ 已完成
 
 ### 目标
 
@@ -121,6 +132,13 @@
 - 文本型 PDF 上传后状态变为 `indexed`。
 - citation 中包含页码。
 - 扫描版 PDF 不导致服务崩溃。
+
+### 实现记录（Phase 4B，2026-05）
+
+- ✅ `internal/knowledge/pdf.go`：使用 `ledongthuc/pdf` 库提取文本
+- ✅ `internal/knowledge/service.go`：`enqueuePDFIndex` / `indexPDF` 异步索引
+- ✅ `.pdf` 已在 `isAllowedFilename` 中允许
+- ✅ 按页提取文本，保留 `page_number` 元数据
 
 ## P1：前端完整接入当前后端
 
@@ -143,7 +161,7 @@
 - RAG 回答可以展示引用来源。
 - 命中 Skill 时前端可见。
 
-## P1：结构化日志和统一错误响应
+## P1：结构化日志和统一错误响应 🔶 已实现，部分接入
 
 ### 目标
 
@@ -163,6 +181,16 @@
 - 每个请求日志都能看到 request id 和耗时。
 - panic 不会导致服务进程退出。
 
+### 实现记录（2026-05-14）
+
+- ✅ `internal/errors/errors.go`：13 个业务错误码 + AppError 结构体
+- ✅ `internal/pkg/response/response.go`：OK/Created/NoContent/Error/ErrorRaw helpers
+- ✅ `internal/middleware/logger.go`：traceID + API Key 脱敏 + 结构化日志
+- ✅ `internal/middleware/recovery.go`：panic 捕获 + 统一错误响应
+- ✅ `main.go`：已切换为 `middleware.Logger()` / `middleware.Recovery()`
+- ✅ `handler/skill.go`：已接入 `pkg/response` 统一响应
+- 🔶 其余 handler（chat.go, knowledge.go）仍使用 `model.ErrorResponse`，待渐进迁移
+
 ## P2：混合检索和过滤
 
 ### 目标
@@ -181,7 +209,7 @@
 - 可按文档或文件类型过滤。
 - 检索结果排序比纯向量更稳。
 
-## P2：Agent 工具化知识库检索
+## P2：Agent 工具化知识库检索 ✅ 已完成
 
 ### 目标
 
@@ -199,4 +227,10 @@
 - Agent 可以按需调用知识库搜索。
 - Tool 返回结果可被模型继续推理。
 - 不重复实现 retriever 逻辑。
+
+### 实现记录
+
+- ✅ `internal/tool/knowledge_search.go`：已实现，复用 Eino Redis Retriever
+- ✅ 已在 `main.go` 中注册为 `knowledge_search` 工具
+- ✅ 返回结构化结果含 content/filename/chunk_index/score
 

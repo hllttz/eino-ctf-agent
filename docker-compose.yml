@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  redis-stack:
+    image: redis/redis-stack:latest
+    container_name: eino-ctf-redis
+    ports:
+      - "127.0.0.1:6379:6379"   # Redis
+      - "127.0.0.1:8001:8001"   # RedisInsight
+    volumes:
+      - redis_data:/data
+    environment:
+      - REDIS_ARGS=--requirepass ${REDIS_PASSWORD:-}
+    restart: unless-stopped
+
+volumes:
+  redis_data:

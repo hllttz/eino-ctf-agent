@@ -133,6 +133,27 @@ func main() {
 	}
 	toolRegistry.Register("encoding_decoder", encodingDecoderTool)
 
+	// Phase 7 crypto_helper CTF 密码学辅助工具。
+	cryptoHelperTool, err := tool.NewCryptoHelperTool()
+	if err != nil {
+		log.Fatalf("[FATAL] failed to create crypto_helper tool: %v", err)
+	}
+	toolRegistry.Register("crypto_helper", cryptoHelperTool)
+
+	// Phase 8 remote_interactor 远程交互工具。
+	remoteInteractorTool, err := tool.NewRemoteInteractorTool()
+	if err != nil {
+		log.Fatalf("[FATAL] failed to create remote_interactor tool: %v", err)
+	}
+	toolRegistry.Register("remote_interactor", remoteInteractorTool)
+
+	// Phase 9 archive_tool 压缩包识别/查看/解压工具。
+	archiveTool, err := tool.NewArchiveTool()
+	if err != nil {
+		log.Fatalf("[FATAL] failed to create archive_tool: %v", err)
+	}
+	toolRegistry.Register("archive_tool", archiveTool)
+
 	// Phase 6 IDA MCP 只读分析工具。
 	// endpoint 非法时记录 warning 并注册 disabled client，不阻止服务启动。
 	idaEndpoint := tool.EnvIDAEndpoint()
@@ -177,6 +198,12 @@ func main() {
 	}
 	toolRegistry.Register("ida_xrefs", idaXrefsTool)
 
+	idaDisasmTool, err := tool.NewIDADisasmTool()
+	if err != nil {
+		log.Fatalf("[FATAL] failed to create ida_disasm tool: %v", err)
+	}
+	toolRegistry.Register("ida_disasm", idaDisasmTool)
+
 	// 组装服务：ragService 处理简单 RAG，chatService 按配置自动选 simple_rag 或 react 模式。
 	ragService := service.NewRAGService(cfg, chatModel, knowledgeRetriever, skillRouter)
 	chatService := service.NewChatService(cfg, chatModel, toolCallingModel, ragService, skillRouter, toolRegistry)
@@ -192,7 +219,7 @@ func main() {
 	// gin.New() 不带默认中间件，由项目自己控制。
 	// 32MB 的 multipart 上限
 	engine := gin.New()
-	engine.Use(gin.Logger(), gin.Recovery(), middleware.CORS(cfg.Server.CORS.AllowOrigins))
+	engine.Use(middleware.Logger(), middleware.Recovery(), middleware.CORS(cfg.Server.CORS.AllowOrigins))
 	engine.MaxMultipartMemory = 32 << 20
 
 	router.Setup(engine, chatHandler, knowledgeHandler, skillHandler)

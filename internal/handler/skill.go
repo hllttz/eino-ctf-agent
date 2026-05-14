@@ -1,11 +1,10 @@
 package handler
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
-	"eino_ctf_agent/internal/model"
+	apperrors "eino_ctf_agent/internal/errors"
+	"eino_ctf_agent/internal/pkg/response"
 	"eino_ctf_agent/internal/pkg/security"
 	"eino_ctf_agent/internal/service"
 )
@@ -20,37 +19,37 @@ func NewSkillHandler(skillService *service.SkillService) *SkillHandler {
 }
 
 func (h *SkillHandler) List(c *gin.Context) {
-	c.JSON(http.StatusOK, h.skillService.List())
+	response.OK(c, h.skillService.List())
 }
 
 func (h *SkillHandler) Get(c *gin.Context) {
 	name := c.Param("name")
 	if !security.ValidSkillName(name) {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Error:   "invalid_skill_name",
-			Message: "skill name may only contain letters, numbers, underscores, and hyphens",
-		})
+		response.Error(c, apperrors.BadRequest(
+			"invalid_skill_name",
+			"skill name may only contain letters, numbers, underscores, and hyphens",
+		))
 		return
 	}
 
 	s, ok := h.skillService.Get(name)
 	if !ok {
-		c.JSON(http.StatusNotFound, model.ErrorResponse{
-			Error:   "skill_not_found",
-			Message: "skill not found",
-		})
+		response.Error(c, apperrors.NotFound(
+			"skill_not_found",
+			"skill not found",
+		))
 		return
 	}
-	c.JSON(http.StatusOK, s)
+	response.OK(c, s)
 }
 
 func (h *SkillHandler) Reload(c *gin.Context) {
 	if err := h.skillService.Reload(); err != nil {
-		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
-			Error:   "reload_skills_failed",
-			Message: err.Error(),
-		})
+		response.Error(c, apperrors.Internal(
+			"reload_skills_failed",
+			err.Error(),
+		))
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	response.OK(c, gin.H{"status": "ok"})
 }
