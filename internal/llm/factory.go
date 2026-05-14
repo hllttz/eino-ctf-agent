@@ -14,6 +14,9 @@ func NewChatModel(ctx context.Context, cfg *config.Config) (model.BaseChatModel,
 	switch cfg.LLM.Provider {
 	case "deepseek":
 		return NewDeepSeekChatModel(ctx, cfg)
+	case "mock":
+		m := NewMockChatModel()
+		return m, nil
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider: %s", cfg.LLM.Provider)
 	}
@@ -25,6 +28,9 @@ func NewToolCallingChatModel(ctx context.Context, cfg *config.Config) (model.Too
 	switch cfg.LLM.Provider {
 	case "deepseek":
 		return NewDeepSeekToolCallingModel(ctx, cfg)
+	case "mock":
+		m := NewMockChatModel()
+		return m, nil
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider: %s", cfg.LLM.Provider)
 	}
