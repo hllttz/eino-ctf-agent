@@ -1,8 +1,12 @@
-.PHONY: run test fmt vet lint redis-up redis-down redis-cli build clean
+.PHONY: run run-mock run-example test fmt vet lint redis-up redis-down redis-cli build clean
 
 # 默认目标
 run:
 	go run ./cmd/server -config ./configs/config.yaml
+
+# Mock 模式启动（无需 API Key，用于本地联调）
+run-mock:
+	go run ./cmd/server -config ./configs/config.mock.yaml
 
 # 以 example config 启动（用于验证配置格式）
 run-example:

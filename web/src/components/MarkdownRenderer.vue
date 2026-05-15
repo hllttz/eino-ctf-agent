@@ -1,19 +1,18 @@
 <template>
-  <!-- TODO Phase 2.5: Markdown 渲染组件 -->
-  <div class="markdown-renderer" v-html="renderedContent"></div>
+  <div class="markdown-renderer">{{ content }}</div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-
-const props = defineProps<{
+defineProps<{
   content: string
 }>()
-
-// TODO Phase 2.5: 接入 markdown-it 或 marked 库
-const renderedContent = computed(() => props.content)
 </script>
 
 <style scoped>
-/* TODO Phase 2.5: Markdown 渲染样式，支持代码高亮 */
+.markdown-renderer {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.6;
+  font-size: 14px;
+}
 </style>

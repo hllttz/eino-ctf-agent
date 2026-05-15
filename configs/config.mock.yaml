@@ -1,0 +1,59 @@
+# Eino CTF Agent Mock 配置（用于本地无 API Key 联调）
+# 启动命令：go run ./cmd/server -config ./configs/config.mock.yaml
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  cors:
+    allow_origins:
+      - http://localhost:5173
+
+llm:
+  provider: mock
+  model: mock-v1
+  fallback_model: mock-v1
+  base_url: ""
+  api_key_env: DEEPSEEK_API_KEY
+  thinking: false
+  temperature: 0.7
+  max_tokens: 4096
+
+embedding:
+  provider: mock
+  model: mock-embed-v1
+  base_url: ""
+  api_key_env: DASHSCOPE_API_KEY
+  dimension: 1024
+  batch_size: 10
+
+rag:
+  top_k: 5
+  score_threshold: 0.35
+  chunk_size: 512
+  chunk_overlap: 64
+  max_context_chunks: 5
+
+storage:
+  docs_dir: ./data/docs
+  skills_dir: ./data/skills
+
+redis:
+  addr: 127.0.0.1:6380
+  username: ""
+  password_env: REDIS_PASSWORD
+  db: 0
+  key_prefix: "eino_ctf_agent:"
+  index: "idx:eino_ctf_agent_chunks"
+  vector_field: "vector_content"
+  distance_threshold: 0
+  dialect: 2
+
+skills:
+  enabled: true
+  max_active_skills: 3
+  allow_reload: true
+
+agent:
+  mode: react
+  max_steps: 100
+  show_tool_calls: true

@@ -140,7 +140,7 @@ func (c *Config) applyDefaults() {
 		c.LLM.Provider = "deepseek"
 	}
 	if c.LLM.Model == "" {
-		c.LLM.Model = "deepseek-v4-flash"
+		c.LLM.Model = "deepseek-v4-pro"
 	}
 	if c.LLM.BaseURL == "" {
 		c.LLM.BaseURL = "https://api.deepseek.com"
@@ -224,7 +224,7 @@ func (c *Config) applyDefaults() {
 		c.Agent.Mode = "simple_rag"
 	}
 	if c.Agent.MaxSteps == 0 {
-		c.Agent.MaxSteps = 5
+		c.Agent.MaxSteps = 100
 	}
 }
 

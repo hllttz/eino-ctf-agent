@@ -40,11 +40,19 @@ make run
 
 使用 Mock 模式（无需 API Key）：
 ```bash
-# 编辑 configs/config.example.yaml，设置：
-#   llm.provider: mock
-#   embedding.provider: mock
-make run-example
+# 使用预置 Mock 配置启动
+make run-mock
 ```
+
+### 启动前端（开发联调）
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+前端 dev server 运行在 `http://localhost:5173`，API 请求通过 Vite proxy 自动转发到后端 `:8080`。
 
 详细步骤见 [docs/quickstart.md](docs/quickstart.md)。
 
