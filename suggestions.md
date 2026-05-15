@@ -2,7 +2,7 @@
 
 ## 一、总体结论
 
-**项目整体架构清晰**：handler（薄）→ service（编排）→ Eino 组件 的分层符合 CLAUDE.md 的设计意图。Eino ChatModel / Embedder / Indexer / Retriever 均已正确集成，Redis 向量检索链路完整。
+**项目整体架构清晰**：handler（薄）→ service（编排）→ Eino 组件 的分层符合 AGENTS.md 的设计意图。Eino ChatModel / Embedder / Indexer / Retriever 均已正确集成，Redis 向量检索链路完整。
 
 **三个突出问题**：
 
@@ -25,7 +25,7 @@
 | # | 位置 | 当前实现 | Eino 替代方案 | 风险 / 争议 |
 |---|------|----------|---------------|-------------|
 | 2 | `internal/knowledge/markdown.go` `ParseMarkdown` + `TextSplitter` | 自实现 Markdown 解析、heading 追踪、字符级切分 | Eino 有 `components/document` 包提供 Loader + Splitter | **不建议改**。当前实现有特殊逻辑：heading 层级追踪生成 `A > B > C` 路径、Front matter 剥离、自定义 chunk 重叠策略。Eino 的通用 splitter 无法直接产出 `HeadingPath` 语义。强行改用反而需要更多适配代码 |
-| 3 | `internal/service/rag.go` 整体 `buildMessages` 方法 | 手工编排 retrieve → filter → match skills → build prompt → generate | Eino `compose.Graph` / `compose.Chain` 可将这些步骤建模为节点和边 | **暂不建议改**。CLAUDE.md 已注明这是 TODO 规划（Phase 7 Agent Runner），当前 simple_rag 模式是有意为之的过渡方案。等 Agent 模式落地时统一重构更合理 |
+| 3 | `internal/service/rag.go` 整体 `buildMessages` 方法 | 手工编排 retrieve → filter → match skills → build prompt → generate | Eino `compose.Graph` / `compose.Chain` 可将这些步骤建模为节点和边 | **暂不建议改**。AGENTS.md 已注明这是 TODO 规划（Phase 7 Agent Runner），当前 simple_rag 模式是有意为之的过渡方案。等 Agent 模式落地时统一重构更合理 |
 
 ### 2.3 不应改
 

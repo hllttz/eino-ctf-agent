@@ -263,7 +263,7 @@ curl --noproxy '*' -s -X POST http://127.0.0.1:8080/api/chat \
 
 ---
 
-## 12. 给新 Claude Code 对话的继续开发 prompt
+## 12. 给新 Codex 对话的继续开发 prompt
 
 ```
 systemRole:
