@@ -3,6 +3,7 @@ package tool
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -28,11 +29,32 @@ var allowedCommands = map[string]bool{
 	"tr": true, "diff": true, "echo": true,
 }
 
+// ArgList 兼容 []string 和 string 两种 JSON 类型。
+// 模型可能在单参数时传入 "args": "1.exe" 而非 "args": ["1.exe"]。
+type ArgList []string
+
+// UnmarshalJSON 支持 args 为 JSON 数组或单个字符串。
+func (a *ArgList) UnmarshalJSON(data []byte) error {
+	// 先尝试 []string
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err == nil {
+		*a = arr
+		return nil
+	}
+	// 兼容单个 string，自动转为单元素切片
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*a = []string{s}
+		return nil
+	}
+	return fmt.Errorf("args must be a JSON string or JSON array of strings, got: %s", string(data))
+}
+
 // CommandExecutorInput 命令执行工具的输入参数。
 type CommandExecutorInput struct {
-	Command string   `json:"command" jsonschema:"description=command name, must be in the allowlist"`
-	Args    []string `json:"args" jsonschema:"description=command arguments as separate strings, no shell parsing"`
-	Timeout int      `json:"timeout,omitempty" jsonschema:"description=timeout in seconds, defaults to 5, max 20"`
+	Command string  `json:"command" jsonschema:"description=command name, must be in the allowlist"`
+	Args    ArgList `json:"args" jsonschema:"description=command arguments as JSON array of strings (e.g. [\"file1.exe\"]), NOT a single string"`
+	Timeout int     `json:"timeout,omitempty" jsonschema:"description=timeout in seconds, defaults to 5, max 20"`
 }
 
 // CommandExecutorOutput 命令执行工具的输出结果。
@@ -56,8 +78,11 @@ func NewCommandExecutorTool() (einotool.InvokableTool, error) {
 			"awk, sed, sort, uniq, cut, tr, diff, od, echo. "+
 			"All file path arguments must be within the working directory; absolute paths and "+
 			"../ traversal are rejected. tar is restricted to -t/--list mode, unzip to -l mode. "+
+			"IMPORTANT: args must be a JSON ARRAY of strings, e.g. [\"1.exe\"], [\"-a\", \"file.o\"]. "+
+			"Never pass args as a single string like \"1.exe\". "+
 			"Has timeout (default 5s, max 20s) and output length limits. "+
-			"Use this to analyze binary files, search for patterns, or explore file structure.",
+			"Use this to analyze binary files, search for patterns, or explore file structure. "+
+			"Example: {\"command\":\"strings\",\"args\":[\"binary.exe\"],\"timeout\":10}",
 		func(ctx context.Context, input CommandExecutorInput) (CommandExecutorOutput, error) {
 			cmd := input.Command
 			if !allowedCommands[cmd] {
@@ -79,7 +104,7 @@ func NewCommandExecutorTool() (einotool.InvokableTool, error) {
 			}
 
 			// 校验所有参数中的文件路径，禁止绝对路径和 ../ 穿越
-			validatedArgs, err := validatePathArgs(input.Args)
+			validatedArgs, err := validatePathArgs([]string(input.Args))
 			if err != nil {
 				return CommandExecutorOutput{
 					ExitCode: -1,

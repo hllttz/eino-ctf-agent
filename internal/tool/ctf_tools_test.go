@@ -1070,3 +1070,77 @@ func TestSystemPrompt_ContainsNewToolNames(t *testing.T) {
 	}
 	t.Log("prompt tool name validation: all 5 tool names are well-formed")
 }
+
+// TestCommandExecutor_ArgsAsStringArray verifies args as []string works.
+func TestCommandExecutor_ArgsAsStringArray(t *testing.T) {
+	// Simulate JSON input with args as array
+	inputJSON := `{"command":"echo","args":["hello","world"]}`
+	var input CommandExecutorInput
+	if err := json.Unmarshal([]byte(inputJSON), &input); err != nil {
+		t.Fatalf("unmarshal []string args: %v", err)
+	}
+	if len(input.Args) != 2 {
+		t.Errorf("expected 2 args, got %d", len(input.Args))
+	}
+	if input.Args[0] != "hello" || input.Args[1] != "world" {
+		t.Errorf("args mismatch: %v", input.Args)
+	}
+}
+
+// TestCommandExecutor_ArgsAsStringAutoConvert verifies args as single string auto-converts to []string.
+func TestCommandExecutor_ArgsAsStringAutoConvert(t *testing.T) {
+	inputJSON := `{"command":"strings","args":"binary.exe"}`
+	var input CommandExecutorInput
+	if err := json.Unmarshal([]byte(inputJSON), &input); err != nil {
+		t.Fatalf("unmarshal string args: %v", err)
+	}
+	if len(input.Args) != 1 {
+		t.Errorf("expected 1 arg after convert, got %d", len(input.Args))
+	}
+	if input.Args[0] != "binary.exe" {
+		t.Errorf("arg mismatch: %q", input.Args[0])
+	}
+}
+
+// TestCommandExecutor_ArgsAsEmptyArray verifies args as empty array works.
+func TestCommandExecutor_ArgsAsEmptyArray(t *testing.T) {
+	inputJSON := `{"command":"ls","args":[]}`
+	var input CommandExecutorInput
+	if err := json.Unmarshal([]byte(inputJSON), &input); err != nil {
+		t.Fatalf("unmarshal empty args: %v", err)
+	}
+	if len(input.Args) != 0 {
+		t.Errorf("expected 0 args, got %d", len(input.Args))
+	}
+}
+
+// TestCommandExecutor_ArgsAsNumberRejected verifies invalid JSON type for args returns error.
+func TestCommandExecutor_ArgsAsNumberRejected(t *testing.T) {
+	inputJSON := `{"command":"file","args":123}`
+	var input CommandExecutorInput
+	if err := json.Unmarshal([]byte(inputJSON), &input); err == nil {
+		t.Error("should reject number type for args")
+	}
+}
+
+// TestArgListUnmarshalJSON_String verifies ArgList handles single string.
+func TestArgListUnmarshalJSON_String(t *testing.T) {
+	var a ArgList
+	if err := json.Unmarshal([]byte(`"hello"`), &a); err != nil {
+		t.Fatalf("ArgList unmarshal string: %v", err)
+	}
+	if len(a) != 1 || a[0] != "hello" {
+		t.Errorf("got %v", a)
+	}
+}
+
+// TestArgListUnmarshalJSON_Array verifies ArgList handles array.
+func TestArgListUnmarshalJSON_Array(t *testing.T) {
+	var a ArgList
+	if err := json.Unmarshal([]byte(`["a","b"]`), &a); err != nil {
+		t.Fatalf("ArgList unmarshal array: %v", err)
+	}
+	if len(a) != 2 {
+		t.Errorf("got %v", a)
+	}
+}

@@ -3,6 +3,7 @@ package tool
 import (
 	"context"
 	"encoding/json"
+	"log"
 
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
@@ -80,6 +81,7 @@ func NewIDAFunctionsTool() (einotool.InvokableTool, error) {
 			"Use this to get an overview of function names before decompiling specific ones. "+
 			"Returns a JSON array of function names, truncated if the list is large.",
 		func(ctx context.Context, input IDAFunctionsInput) (IDAFunctionsOutput, error) {
+			log.Printf("[ida-react-tool] logical=ida_functions handler=IDAMCPClient.Functions")
 			if idaClient == nil {
 				return IDAFunctionsOutput{Error: "IDA MCP client not configured"}, nil
 			}
@@ -251,6 +253,61 @@ func NewIDAXrefsTool() (einotool.InvokableTool, error) {
 			return IDAXrefsOutput{
 				Xrefs:     content,
 				Truncated: truncated,
+			}, nil
+		},
+	)
+}
+
+// ida_disasm
+
+// IDADisasmInput ida_disasm 工具的输入参数。
+type IDADisasmInput struct {
+	Address string `json:"address" jsonschema:"description=start address in hex (e.g. 0x401000) or function name to disassemble"`
+	End     string `json:"end,omitempty" jsonschema:"description=end address in hex, optional"`
+	Count   int    `json:"count,omitempty" jsonschema:"description=maximum number of instructions to return, default 100"`
+}
+
+// IDADisasmOutput ida_disasm 工具的输出结果。
+type IDADisasmOutput struct {
+	Instructions string `json:"instructions" jsonschema:"description=disassembled instructions, truncated if exceeds limit"`
+	Truncated    bool   `json:"truncated" jsonschema:"description=whether the output was truncated"`
+	Error        string `json:"error,omitempty" jsonschema:"description=error message if disassembly failed"`
+}
+
+// NewIDADisasmTool 创建 IDA 反汇编工具。
+func NewIDADisasmTool() (einotool.InvokableTool, error) {
+	return utils.InferTool[IDADisasmInput, IDADisasmOutput](
+		"ida_disasm",
+		"Disassemble instructions at a given address using IDA. "+
+			"Use this to examine assembly code around a specific location, "+
+			"check JUMPOUT targets, analyze cmp/test/jmp/jcc patterns, "+
+			"or understand control flow at the instruction level. "+
+			"Provide address in hex (e.g. 0x401000) or as a function name. "+
+			"Call this AFTER ida_status confirms the service is available.",
+		func(ctx context.Context, input IDADisasmInput) (IDADisasmOutput, error) {
+			log.Printf("[ida-react-tool] logical=ida_disasm handler=IDAMCPClient.Disasm")
+			if idaClient == nil {
+				return IDADisasmOutput{Error: "IDA MCP client not configured"}, nil
+			}
+			count := input.Count
+			if count <= 0 {
+				count = 100
+			}
+			result, err := idaClient.Disasm(ctx, input.Address, input.End, count)
+			if err != nil {
+				return IDADisasmOutput{Error: err.Error()}, nil
+			}
+			if result.Error != "" {
+				return IDADisasmOutput{Error: result.Error}, nil
+			}
+
+			content, truncated := truncateOutput(result.Instructions, idaOutputLimit)
+			if truncated {
+				content += "\n...[ida_disasm output truncated]"
+			}
+			return IDADisasmOutput{
+				Instructions: content,
+				Truncated:    truncated,
 			}, nil
 		},
 	)
